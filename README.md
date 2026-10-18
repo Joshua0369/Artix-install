@@ -52,5 +52,5 @@ This script handles the entire installation pipeline interactively:
 ```bash
 git clone https://github.com/Joshua0369/Artix-install.git
 cd Artix-install
-chmod +x install.sh
-sudo ./install.sh
+chmod +x artix-install.sh
+sudo ./artix-install.sh
