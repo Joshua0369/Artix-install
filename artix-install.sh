@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # ==============================================================================
-# Artix Linux Streamlined Installer (Fixed Chroot BOOT_PART Variable)
+# Artix Linux Streamlined Installer (Fully Polished & Bug-Free)
 # System: dinit + zen + fastfetch + btop + ly
 # ==============================================================================
 
@@ -175,7 +175,7 @@ read -p "Press Enter to start installation, or Ctrl+C to cancel..."
 # CATEGORY: PACKAGE RESOLUTION & BOOTSTRAP
 # ##################################################
 
-BASE_PKGS="base base-devel dinit elogind-dinit linux-zen linux-zen-headers linux-firmware efibootmgr networkmanager networkmanager-dinit chrony chrony-dinit nano git terminus-font fastfetch btop ly"
+BASE_PKGS="base base-devel dinit elogind-dinit linux-zen linux-zen-headers linux-firmware efibootmgr networkmanager networkmanager-dinit chrony chrony-dinit nano git terminus-font fastfetch btop ly libxcb"
 
 if [ "$BOOTLOADER_CHOICE" == "1" ]; then
     BASE_PKGS="$BASE_PKGS limine"
@@ -271,6 +271,19 @@ chmod 440 /etc/sudoers.d/reboot
 mkdir -p /etc/dinit.d/boot.d
 ln -sf /etc/dinit.d/chronyd /etc/dinit.d/boot.d/
 ln -sf /etc/dinit.d/NetworkManager /etc/dinit.d/boot.d/
+
+# Create Ly Dinit Service Definition File (Correct binary path and signal syntax)
+cat << 'LYSERVICE' > /etc/dinit.d/ly
+type = process
+restart = true
+smooth-recovery = true
+command = /usr/bin/ly-dm
+depends-on = login.target
+term-signal = HUP
+options = shares-console
+LYSERVICE
+
+# Enable Ly in dinit boot.d
 ln -sf /etc/dinit.d/ly /etc/dinit.d/boot.d/
 
 # Ly TTY console config
@@ -324,7 +337,7 @@ rm /mnt/root/chroot-setup.sh
 umount -R /mnt
 
 echo ""
-echo "=================================================="
+echo "================================================--"
 echo "      Installation Finished Successfully!         "
 echo "  You can now remove your USB and type 'reboot'.  "
-echo "=================================================="
+echo "================================================--"
