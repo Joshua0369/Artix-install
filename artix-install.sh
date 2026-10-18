@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # ==============================================================================
-# Artix Linux Streamlined Installer (dinit + zen + fastfetch + btop + ly)
+# Artix Linux Streamlined Installer (Fixed Chroot BOOT_PART Variable)
+# System: dinit + zen + fastfetch + btop + ly
 # ==============================================================================
 
 set -Eeuo pipefail
@@ -230,6 +231,7 @@ HOSTNAME="__HOSTNAME__"
 USERNAME="__USERNAME__"
 TIMEZONE="__TIMEZONE__"
 ROOT_PART="__ROOT_PART__"
+BOOT_PART="__BOOT_PART__"
 BOOTLOADER_CHOICE="__BOOTLOADER_CHOICE__"
 
 # Time & Locale
@@ -309,6 +311,7 @@ sed -i "s|__HOSTNAME__|$HOSTNAME|g" /mnt/root/chroot-setup.sh
 sed -i "s|__USERNAME__|$USERNAME|g" /mnt/root/chroot-setup.sh
 sed -i "s|__TIMEZONE__|$TIMEZONE|g" /mnt/root/chroot-setup.sh
 sed -i "s|__ROOT_PART__|$ROOT_PART|g" /mnt/root/chroot-setup.sh
+sed -i "s|__BOOT_PART__|$BOOT_PART|g" /mnt/root/chroot-setup.sh
 sed -i "s|__BOOTLOADER_CHOICE__|$BOOTLOADER_CHOICE|g" /mnt/root/chroot-setup.sh
 
 chmod +x /mnt/root/chroot-setup.sh
