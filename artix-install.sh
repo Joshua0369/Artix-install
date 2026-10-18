@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # ==============================================================================
-# Artix Linux Custom Interactive Installer (Font Download & Robust Safety)
+# Artix Linux Custom Interactive Installer (Fixed Early Home Ownership)
 # System: dinit + linux-zen | Optional: Zsh, PipeWire, WMs & Dotfiles, Ly, Fastfetch, Alacritty
 # ==============================================================================
 
@@ -481,7 +481,7 @@ useradd -m -G wheel -s $USER_SHELL $USERNAME
 echo "-> Set password for user '$USERNAME':"
 passwd $USERNAME
 
-# Fix user home directory permissions immediately to prevent permission denied errors
+# FIX: Immediately set proper home ownership so runuser commands never fail with permission denied
 chown -R $USERNAME:$USERNAME /home/$USERNAME
 
 # --------------------------------------------------
