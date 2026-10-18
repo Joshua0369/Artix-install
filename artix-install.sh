@@ -1,10 +1,30 @@
 #!/usr/bin/env bash
 # ==============================================================================
-# Artix Linux Custom Interactive Installer (Fixed Git Host Dependency)
+# Artix Linux Custom Interactive Installer (Robust Error Trap & Dinit Fix)
 # System: dinit + linux-zen | Optional: Zsh, PipeWire, WMs & Dotfiles, Ly, Fastfetch, Alacritty
 # ==============================================================================
 
-set -e
+set -Eeuo pipefail
+
+# --------------------------------------------------
+# Error Handler & Safe Cleanup Trap
+# --------------------------------------------------
+cleanup_on_error() {
+    local exit_code=$?
+    local line_no=$1
+    echo ""
+    echo "=================================================================="
+    echo "  [!] INSTALLATION ERROR DETECTED"
+    echo "  The script broke at line $line_no with exit code $exit_code."
+    echo "  Executing safe cleanup: lazy unmounting /mnt..."
+    echo "=================================================================="
+    umount -R /mnt 2>/dev/null || true
+    umount -l /mnt 2>/dev/null || true
+    exit "$exit_code"
+}
+
+trap 'cleanup_on_error $LINENO' ERR
+
 
 # ##################################################
 # CATEGORY: PRE-INSTALLATION SYSTEM & NETWORK CHECKS
@@ -379,30 +399,43 @@ fstabgen -U /mnt >> /mnt/etc/fstab
 
 echo "[Step 6/33] Preparing chroot system configuration script..."
 
-cat << EOF > /mnt/root/chroot-setup.sh
+cat << 'EOF' > /mnt/root/chroot-setup.sh
 #!/usr/bin/env bash
-set -e
+set -Eeuo pipefail
 
-HOSTNAME="$HOSTNAME"
-USERNAME="$USERNAME"
-TIMEZONE="$TIMEZONE"
-INSTALL_ZSH="$INSTALL_ZSH"
-INSTALL_PIPEWIRE="$INSTALL_PIPEWIRE"
-INSTALL_LY="$INSTALL_LY"
-INSTALL_FASTFETCH="$INSTALL_FASTFETCH"
-INSTALL_ALACRITTY="$INSTALL_ALACRITTY"
-INSTALL_DWM_CONFIG="$INSTALL_DWM_CONFIG"
-INSTALL_BSPWM_CONFIG="$INSTALL_BSPWM_CONFIG"
-INSTALL_VXWM_CONFIG="$INSTALL_VXWM_CONFIG"
-WM_CHOICE="$WM_CHOICE"
-ROOT_PART="$ROOT_PART"
-BOOTLOADER_CHOICE="$BOOTLOADER_CHOICE"
+# Catch errors inside chroot as well
+chroot_error() {
+    local exit_code=$?
+    local line_no=$1
+    echo ""
+    echo "=================================================================="
+    echo "  [!] CHROOT INSTALLATION ERROR DETECTED"
+    echo "  The chroot script broke at line $line_no with exit code $exit_code."
+    echo "=================================================================="
+    exit "$exit_code"
+}
+trap 'chroot_error $LINENO' ERR
+
+HOSTNAME="__HOSTNAME__"
+USERNAME="__USERNAME__"
+TIMEZONE="__TIMEZONE__"
+INSTALL_ZSH="__INSTALL_ZSH__"
+INSTALL_PIPEWIRE="__INSTALL_PIPEWIRE__"
+INSTALL_LY="__INSTALL_LY__"
+INSTALL_FASTFETCH="__INSTALL_FASTFETCH__"
+INSTALL_ALACRITTY="__INSTALL_ALACRITTY__"
+INSTALL_DWM_CONFIG="__INSTALL_DWM_CONFIG__"
+INSTALL_BSPWM_CONFIG="__INSTALL_BSPWM_CONFIG__"
+INSTALL_VXWM_CONFIG="__INSTALL_VXWM_CONFIG__"
+WM_CHOICE="__WM_CHOICE__"
+ROOT_PART="__ROOT_PART__"
+BOOTLOADER_CHOICE="__BOOTLOADER_CHOICE__"
 
 # --------------------------------------------------
 # Section 18: Time & Locale Configuration
 # --------------------------------------------------
-echo "[Step 7/33] Setting up system time and timezone (\$TIMEZONE)..."
-ln -sf /usr/share/zoneinfo/\$TIMEZONE /etc/localtime
+echo "[Step 7/33] Setting up system time and timezone ($TIMEZONE)..."
+ln -sf /usr/share/zoneinfo/$TIMEZONE /etc/localtime
 hwclock --systohc
 
 echo "[Step 8/33] Generating US UTF-8 locale..."
@@ -413,28 +446,28 @@ echo "LANG=en_US.UTF-8" > /etc/locale.conf
 # --------------------------------------------------
 # Section 19: Hostname & Network Hosts Configuration
 # --------------------------------------------------
-echo "[Step 9/33] Setting system hostname to \$HOSTNAME..."
-echo "\$HOSTNAME" > /etc/hostname
+echo "[Step 9/33] Setting system hostname to $HOSTNAME..."
+echo "$HOSTNAME" > /etc/hostname
 cat << HOSTS > /etc/hosts
 127.0.0.1   localhost
 ::1         localhost
-127.0.1.1   \$HOSTNAME.localdomain   \$HOSTNAME
+127.0.1.1   $HOSTNAME.localdomain   $HOSTNAME
 HOSTS
 
 # --------------------------------------------------
 # Section 20: User & Password Setup
 # --------------------------------------------------
 USER_SHELL="/bin/bash"
-if [[ "\$INSTALL_ZSH" =~ ^[Yy]\$ ]]; then
+if [[ "$INSTALL_ZSH" =~ ^[Yy]$ ]]; then
     USER_SHELL="/bin/zsh"
 fi
 
-echo "[Step 10/33] Creating user account '\$USERNAME'..."
+echo "[Step 10/33] Creating user account '$USERNAME'..."
 echo "-> Set root administrator password:"
 passwd
-useradd -m -G wheel -s \$USER_SHELL \$USERNAME
-echo "-> Set password for user '\$USERNAME':"
-passwd \$USERNAME
+useradd -m -G wheel -s $USER_SHELL $USERNAME
+echo "-> Set password for user '$USERNAME':"
+passwd $USERNAME
 
 # --------------------------------------------------
 # Section 21: Privilege Escalation & Sudoers Rules (Passwordless for Wheel)
@@ -444,21 +477,22 @@ sed -i '/%wheel ALL=(ALL:ALL) ALL/s/^#//' /etc/sudoers
 echo "%wheel ALL=(ALL) NOPASSWD: ALL" > /etc/sudoers.d/wheel
 chmod 440 /etc/sudoers.d/wheel
 
-echo "[Step 12/33] Configuring passwordless reboot and poweroff for \$USERNAME..."
-echo "\$USERNAME ALL=(ALL) NOPASSWD: /usr/bin/reboot, /usr/bin/poweroff, /usr/sbin/reboot, /usr/sbin/poweroff" > /etc/sudoers.d/reboot
+echo "[Step 12/33] Configuring passwordless reboot and poweroff for $USERNAME..."
+echo "$USERNAME ALL=(ALL) NOPASSWD: /usr/bin/reboot, /usr/bin/poweroff, /usr/sbin/reboot, /usr/sbin/poweroff" > /etc/sudoers.d/reboot
 chmod 440 /etc/sudoers.d/reboot
 
 # --------------------------------------------------
-# Section 22: Dinit Service Enablement (Chronyd & NetworkManager)
+# Section 22: Dinit Service Enablement (Offline Symlinking)
 # --------------------------------------------------
-echo "[Step 13/33] Enabling internet clock synchronization & network manager..."
-dinitctl enable chronyd
-dinitctl enable NetworkManager
+echo "[Step 13/33] Enabling internet clock synchronization & network manager via Dinit boot symlinks..."
+mkdir -p /etc/dinit.d/boot.d
+ln -sf /etc/dinit.d/chronyd /etc/dinit.d/boot.d/
+ln -sf /etc/dinit.d/NetworkManager /etc/dinit.d/boot.d/
 
 # --------------------------------------------------
 # Section 23: Ly Display Manager Configuration & Service
 # --------------------------------------------------
-if [[ "\$INSTALL_LY" =~ ^[Yy]\$ ]]; then
+if [[ "$INSTALL_LY" =~ ^[Yy]$ ]]; then
     echo "[Step 14/33] Creating Dinit service definition for Ly display manager..."
     mkdir -p /etc/dinit.d
     cat << 'LYSERVICE' > /etc/dinit.d/ly
@@ -478,7 +512,7 @@ ACTIVE_CONSOLES=/dev/tty1 /dev/tty3 /dev/tty4 /dev/tty5 /dev/tty6
 CONSOLECONF
 
     echo "[Step 16/33] Enabling Ly display manager in dinit..."
-    dinitctl enable ly
+    ln -sf /etc/dinit.d/ly /etc/dinit.d/boot.d/
 else
     echo "[Step 14/33] Skipping Ly dinit service creation..."
     echo "[Step 15/33] Skipping console.conf TTY reallocation..."
@@ -488,10 +522,10 @@ fi
 # --------------------------------------------------
 # Section 24: PipeWire Low-Latency Configuration
 # --------------------------------------------------
-if [[ "\$INSTALL_PIPEWIRE" =~ ^[Yy]\$ ]]; then
+if [[ "$INSTALL_PIPEWIRE" =~ ^[Yy]$ ]]; then
     echo "[Step 17/33] Writing 64-sample (~1.33ms) low-latency PipeWire configuration..."
-    mkdir -p /home/\$USERNAME/.config/pipewire/pipewire.conf.d
-    cat << 'PIPEWIRE' > /home/\$USERNAME/.config/pipewire/pipewire.conf.d/10-low-latency.conf
+    mkdir -p /home/$USERNAME/.config/pipewire/pipewire.conf.d
+    cat << 'PIPEWIRE' > /home/$USERNAME/.config/pipewire/pipewire.conf.d/10-low-latency.conf
 context.properties = {
     default.clock.rate          = 48000
     default.clock.allowed-rates = [ 48000 96000 ]
@@ -507,15 +541,15 @@ fi
 # --------------------------------------------------
 # Section 25: Xinitrc Configuration for X11 WMs (Ly session support)
 # --------------------------------------------------
-if [ "\$WM_CHOICE" == "1" ] || [ "\$WM_CHOICE" == "2" ] || [ "\$WM_CHOICE" == "5" ] || [ "\$WM_CHOICE" == "6" ] || [ "\$WM_CHOICE" == "7" ]; then
+if [ "$WM_CHOICE" == "1" ] || [ "$WM_CHOICE" == "2" ] || [ "$WM_CHOICE" == "5" ] || [ "$WM_CHOICE" == "6" ] || [ "$WM_CHOICE" == "7" ]; then
     echo "[Step 18/33] Configuring .xinitrc session runner for X11 WMs..."
     DEFAULT_WM="dwm"
-    if [ "\$WM_CHOICE" == "5" ]; then
+    if [ "$WM_CHOICE" == "5" ]; then
         DEFAULT_WM="bspwm"
-    elif [ "\$WM_CHOICE" == "6" ]; then
+    elif [ "$WM_CHOICE" == "6" ]; then
         DEFAULT_WM="vxwm"
     fi
-    cat << XINIT > /home/\$USERNAME/.xinitrc
+    cat << XINIT > /home/$USERNAME/.xinitrc
 # Start Pipewire daemons if present
 if command -v pipewire &>/dev/null; then
     pipewire &
@@ -523,7 +557,7 @@ if command -v pipewire &>/dev/null; then
     pipewire-pulse &
 fi
 
-exec \$DEFAULT_WM
+exec $DEFAULT_WM
 XINIT
 else
     echo "[Step 18/33] Skipping .xinitrc (Wayland-only or no X11 WM selected)..."
@@ -532,20 +566,20 @@ fi
 # --------------------------------------------------
 # Section 26: Zsh, fzf-tab & Dotfiles Configuration
 # --------------------------------------------------
-if [[ "\$INSTALL_ZSH" =~ ^[Yy]\$ ]]; then
+if [[ "$INSTALL_ZSH" =~ ^[Yy]$ ]]; then
     echo "[Step 19/33] Cloning fzf-tab Zsh plugin..."
     mkdir -p /usr/share/zsh/plugins/fzf-tab-git
     git clone https://github.com/Aloxaf/fzf-tab.git /usr/share/zsh/plugins/fzf-tab-git
 
     echo "[Step 20/33] Fetching and applying gh0stzk's Zsh shell configuration..."
     git clone https://github.com/gh0stzk/dotfiles.git /tmp/gh0stzk-dots
-    mkdir -p /home/\$USERNAME/.config/zsh
+    mkdir -p /home/$USERNAME/.config/zsh
     if [ -f /tmp/gh0stzk-dots/home/.zshrc ]; then
-        cp /tmp/gh0stzk-dots/home/.zshrc /home/\$USERNAME/.zshrc
+        cp /tmp/gh0stzk-dots/home/.zshrc /home/$USERNAME/.zshrc
     fi
 
     echo "[Step 21/33] Adding power aliases to .zshrc..."
-    cat << 'ALIASES' >> /home/\$USERNAME/.zshrc
+    cat << 'ALIASES' >> /home/$USERNAME/.zshrc
 
 # Power shortcuts
 alias reboot='sudo reboot'
@@ -561,43 +595,43 @@ fi
 # --------------------------------------------------
 # Section 27: dwm, bspwm & vxwm Dotfiles Setup
 # --------------------------------------------------
-if [[ "\$INSTALL_DWM_CONFIG" =~ ^[Yy]\$ ]]; then
+if [[ "$INSTALL_DWM_CONFIG" =~ ^[Yy]$ ]]; then
     echo "[Step 22/33] Installing dwm dotfiles (mich-murphy/dwm-dotfiles)..."
     git clone https://github.com/mich-murphy/dwm-dotfiles.git /tmp/dwm-dots
-    mkdir -p /home/\$USERNAME/.config/dwm
+    mkdir -p /home/$USERNAME/.config/dwm
     if [ -d /tmp/dwm-dots/dwm ]; then
-        cp -rf /tmp/dwm-dots/dwm/* /home/\$USERNAME/.config/dwm/
+        cp -rf /tmp/dwm-dots/dwm/* /home/$USERNAME/.config/dwm/
     else
-        cp -rf /tmp/dwm-dots/* /home/\$USERNAME/.config/dwm/
+        cp -rf /tmp/dwm-dots/* /home/$USERNAME/.config/dwm/
     fi
     rm -rf /tmp/dwm-dots
 else
     echo "[Step 22/33] Skipping dwm dotfiles installation..."
 fi
 
-if [[ "\$INSTALL_BSPWM_CONFIG" =~ ^[Yy]\$ ]]; then
+if [[ "$INSTALL_BSPWM_CONFIG" =~ ^[Yy]$ ]]; then
     echo "[Step 22.3/33] Installing bspwm dotfiles (gh0stzk/dotfiles)..."
     git clone https://github.com/gh0stzk/dotfiles.git /tmp/gh0stzk-bspwm
-    mkdir -p /home/\$USERNAME/.config
+    mkdir -p /home/$USERNAME/.config
     if [ -d /tmp/gh0stzk-bspwm/bspwm ]; then
-        cp -rf /tmp/gh0stzk-bspwm/bspwm /home/\$USERNAME/.config/
+        cp -rf /tmp/gh0stzk-bspwm/bspwm /home/$USERNAME/.config/
     fi
     if [ -d /tmp/gh0stzk-bspwm/sxhkd ]; then
-        cp -rf /tmp/gh0stzk-bspwm/sxhkd /home/\$USERNAME/.config/
+        cp -rf /tmp/gh0stzk-bspwm/sxhkd /home/$USERNAME/.config/
     fi
     if [ -d /tmp/gh0stzk-bspwm/polybar ]; then
-        cp -rf /tmp/gh0stzk-bspwm/polybar /home/\$USERNAME/.config/
+        cp -rf /tmp/gh0stzk-bspwm/polybar /home/$USERNAME/.config/
     fi
     rm -rf /tmp/gh0stzk-bspwm
 else
     echo "[Step 22.3/33] Skipping bspwm dotfiles installation..."
 fi
 
-if [[ "\$INSTALL_VXWM_CONFIG" =~ ^[Yy]\$ ]]; then
+if [[ "$INSTALL_VXWM_CONFIG" =~ ^[Yy]$ ]]; then
     echo "[Step 22.6/33] Installing vxwm dotfiles (ceapeapea/vxwm-dotfiles)..."
     git clone https://github.com/ceapeapea/vxwm-dotfiles.git /tmp/vxwm-dots
-    mkdir -p /home/\$USERNAME/.config
-    cp -rf /tmp/vxwm-dots/* /home/\$USERNAME/.config/ 2>/dev/null || true
+    mkdir -p /home/$USERNAME/.config
+    cp -rf /tmp/vxwm-dots/* /home/$USERNAME/.config/ 2>/dev/null || true
     rm -rf /tmp/vxwm-dots
 else
     echo "[Step 22.6/33] Skipping vxwm dotfiles installation..."
@@ -606,9 +640,9 @@ fi
 # --------------------------------------------------
 # Section 28: Fastfetch & Awesome-Fastfetch Setup
 # --------------------------------------------------
-if [[ "\$INSTALL_FASTFETCH" =~ ^[Yy]\$ ]]; then
+if [[ "$INSTALL_FASTFETCH" =~ ^[Yy]$ ]]; then
     echo "[Step 23/33] Cloning sakibreza229/awesome-fastfetch preset..."
-    runuser -u \$USERNAME -- bash -c "
+    runuser -u $USERNAME -- bash -c "
         cd /tmp &&
         git clone https://github.com/sakibreza229/awesome-fastfetch.git &&
         cd awesome-fastfetch &&
@@ -623,10 +657,10 @@ fi
 # --------------------------------------------------
 # Section 29: Alacritty Font & Config Setup
 # --------------------------------------------------
-if [[ "\$INSTALL_ALACRITTY" =~ ^[Yy]\$ ]]; then
+if [[ "$INSTALL_ALACRITTY" =~ ^[Yy]$ ]]; then
     echo "[Step 24/33] Writing Alacritty config (JetBrains Mono, Size 14)..."
-    mkdir -p /home/\$USERNAME/.config/alacritty
-    cat << 'ALACRITTY' > /home/\$USERNAME/.config/alacritty/alacritty.toml
+    mkdir -p /home/$USERNAME/.config/alacritty
+    cat << 'ALACRITTY' > /home/$USERNAME/.config/alacritty/alacritty.toml
 [font]
 size = 14.0
 
@@ -651,13 +685,13 @@ else
     echo "[Step 24/33] Skipping Alacritty configuration..."
 fi
 
-chown -R \$USERNAME:\$USERNAME /home/\$USERNAME
+chown -R $USERNAME:$USERNAME /home/$USERNAME
 
 # --------------------------------------------------
 # Section 30: AUR Helpers Build (yay & paru) via runuser
 # --------------------------------------------------
 echo "[Step 25/33] Compiling and installing 'yay' AUR helper..."
-runuser -u \$USERNAME -- bash -c "
+runuser -u $USERNAME -- bash -c "
     cd /tmp &&
     git clone https://aur.archlinux.org/yay.git &&
     cd yay &&
@@ -666,7 +700,7 @@ runuser -u \$USERNAME -- bash -c "
 rm -rf /tmp/yay
 
 echo "[Step 26/33] Compiling and installing 'paru' AUR helper..."
-runuser -u \$USERNAME -- bash -c "
+runuser -u $USERNAME -- bash -c "
     cd /tmp &&
     git clone https://aur.archlinux.org/paru.git &&
     cd paru &&
@@ -677,7 +711,7 @@ rm -rf /tmp/paru
 # --------------------------------------------------
 # Section 31: Suckless DWM & Dmenu Source Compilation + AUR WMs
 # --------------------------------------------------
-if [ "\$WM_CHOICE" == "1" ] || [ "\$WM_CHOICE" == "7" ]; then
+if [ "$WM_CHOICE" == "1" ] || [ "$WM_CHOICE" == "7" ]; then
     echo "[Step 27/33] Cloning and compiling dwm & dmenu from suckless.org..."
     cd /tmp
     git clone https://git.suckless.org/dwm
@@ -687,31 +721,31 @@ if [ "\$WM_CHOICE" == "1" ] || [ "\$WM_CHOICE" == "7" ]; then
     cd /tmp && rm -rf dwm dmenu
 fi
 
-if [ "\$WM_CHOICE" == "2" ] || [ "\$WM_CHOICE" == "7" ]; then
+if [ "$WM_CHOICE" == "2" ] || [ "$WM_CHOICE" == "7" ]; then
     echo "[Step 27.2/33] Installing oxwm from AUR..."
-    runuser -u \$USERNAME -- bash -c "yay -S --noconfirm oxwm-git || yay -S --noconfirm oxwm" || true
+    runuser -u $USERNAME -- bash -c "yay -S --noconfirm oxwm-git || yay -S --noconfirm oxwm" || true
 fi
 
-if [ "\$WM_CHOICE" == "4" ] || [ "\$WM_CHOICE" == "7" ]; then
+if [ "$WM_CHOICE" == "4" ] || [ "$WM_CHOICE" == "7" ]; then
     echo "[Step 27.4/33] Installing mangowc from AUR..."
-    runuser -u \$USERNAME -- bash -c "yay -S --noconfirm mangowc-git || yay -S --noconfirm mangowc" || true
+    runuser -u $USERNAME -- bash -c "yay -S --noconfirm mangowc-git || yay -S --noconfirm mangowc" || true
 fi
 
-if [ "\$WM_CHOICE" == "6" ] || [ "\$WM_CHOICE" == "7" ]; then
+if [ "$WM_CHOICE" == "6" ] || [ "$WM_CHOICE" == "7" ]; then
     echo "[Step 27.6/33] Installing vxwm from AUR..."
-    runuser -u \$USERNAME -- bash -c "yay -S --noconfirm vxwm-git || yay -S --noconfirm vxwm" || true
+    runuser -u $USERNAME -- bash -c "yay -S --noconfirm vxwm-git || yay -S --noconfirm vxwm" || true
 fi
 
 # --------------------------------------------------
 # Section 32: Bootloader Deployment (Limine or GRUB)
 # --------------------------------------------------
-if [ "\$BOOTLOADER_CHOICE" == "1" ]; then
+if [ "$BOOTLOADER_CHOICE" == "1" ]; then
     echo "[Step 28/33] Deploying Limine bootloader binaries..."
     mkdir -p /boot/EFI/BOOT
     cp /usr/share/limine/BOOTX64.EFI /boot/EFI/BOOT/
 
     echo "[Step 29/33] Writing limine.conf (Timeout: NO)..."
-    ROOT_UUID=\$(blkid -s UUID -o value \$ROOT_PART)
+    ROOT_UUID=$(blkid -s UUID -o value $ROOT_PART)
     cat << LIMINE > /boot/limine.conf
 timeout: no
 
@@ -719,14 +753,14 @@ timeout: no
     protocol: linux
     path: boot():/vmlinuz-linux-zen
     module_path: boot():/initramfs-linux-zen.img
-    cmdline: root=UUID=\$ROOT_UUID rw quiet
+    cmdline: root=UUID=$ROOT_UUID rw quiet
 LIMINE
 
     echo "[Step 30/33] Registering Limine in UEFI NVRAM..."
-    DISK_DEV=\$(echo "\$BOOT_PART" | sed -E 's/p?[0-9]+$//')
-    PART_NUM=\$(echo "\$BOOT_PART" | grep -o '[0-9]*\$')
+    DISK_DEV=$(echo "$BOOT_PART" | sed -E 's/p?[0-9]+$//')
+    PART_NUM=$(echo "$BOOT_PART" | grep -o '[0-9]*$')
 
-    efibootmgr --create --disk "\$DISK_DEV" --part "\$PART_NUM" --label "Limine" --loader '\\EFI\\BOOT\\BOOTX64.EFI'
+    efibootmgr --create --disk "$DISK_DEV" --part "$PART_NUM" --label "Limine" --loader '\\EFI\\BOOT\\BOOTX64.EFI'
 else
     echo "[Step 28/33] Installing GRUB bootloader..."
     grub-install --target=x86_64-efi --efi-directory=/boot --bootloader-id=GRUB
@@ -739,6 +773,22 @@ fi
 
 echo "[Step 31/33] System configuration inside chroot complete!"
 EOF
+
+# Safely inject user variables into the chroot script template
+sed -i "s|__HOSTNAME__|$HOSTNAME|g" /mnt/root/chroot-setup.sh
+sed -i "s|__USERNAME__|$USERNAME|g" /mnt/root/chroot-setup.sh
+sed -i "s|__TIMEZONE__|$TIMEZONE|g" /mnt/root/chroot-setup.sh
+sed -i "s|__INSTALL_ZSH__|$INSTALL_ZSH|g" /mnt/root/chroot-setup.sh
+sed -i "s|__INSTALL_PIPEWIRE__|$INSTALL_PIPEWIRE|g" /mnt/root/chroot-setup.sh
+sed -i "s|__INSTALL_LY__|$INSTALL_LY|g" /mnt/root/chroot-setup.sh
+sed -i "s|__INSTALL_FASTFETCH__|$INSTALL_FASTFETCH|g" /mnt/root/chroot-setup.sh
+sed -i "s|__INSTALL_ALACRITTY__|$INSTALL_ALACRITTY|g" /mnt/root/chroot-setup.sh
+sed -i "s|__INSTALL_DWM_CONFIG__|$INSTALL_DWM_CONFIG|g" /mnt/root/chroot-setup.sh
+sed -i "s|__INSTALL_BSPWM_CONFIG__|$INSTALL_BSPWM_CONFIG|g" /mnt/root/chroot-setup.sh
+sed -i "s|__INSTALL_VXWM_CONFIG__|$INSTALL_VXWM_CONFIG|g" /mnt/root/chroot-setup.sh
+sed -i "s|__WM_CHOICE__|$WM_CHOICE|g" /mnt/root/chroot-setup.sh
+sed -i "s|__ROOT_PART__|$ROOT_PART|g" /mnt/root/chroot-setup.sh
+sed -i "s|__BOOTLOADER_CHOICE__|$BOOTLOADER_CHOICE|g" /mnt/root/chroot-setup.sh
 
 
 # ##################################################
