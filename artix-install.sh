@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # ==============================================================================
-# Artix Linux Custom Interactive Installer (Robust Error Trap & Dinit Fix)
+# Artix Linux Custom Interactive Installer (Font Download & Robust Safety)
 # System: dinit + linux-zen | Optional: Zsh, PipeWire, WMs & Dotfiles, Ly, Fastfetch, Alacritty
 # ==============================================================================
 
@@ -34,6 +34,19 @@ echo "=================================================="
 echo "    Artix Linux Custom Interactive Installer      "
 echo "=================================================="
 echo ""
+
+# --------------------------------------------------
+# Font Selection Option (Live USB Terminal + Download)
+# --------------------------------------------------
+read -p "Do you want to download and set the console font to ter-v14b? (y/n) [default: y]: " SET_FONT
+SET_FONT=${SET_FONT:-y}
+if [[ "$SET_FONT" =~ ^[Yy]$ ]]; then
+    echo "==> Installing terminus-font on live environment..."
+    pacman -Sy --noconfirm terminus-font 2>/dev/null || echo "[!] Warning: Could not install terminus-font via pacman."
+    setfont ter-v14b 2>/dev/null || echo "[!] Notice: ter-v14b font could not be loaded."
+fi
+echo ""
+
 echo "==> Running pre-installation checks..."
 
 # --------------------------------------------------
@@ -312,7 +325,7 @@ read -p "Press Enter to start formatting and installation, or Ctrl+C to cancel..
 # CATEGORY: PACKAGE RESOLUTION
 # ##################################################
 
-BASE_PKGS="base base-devel dinit elogind-dinit linux-zen linux-zen-headers linux-firmware efibootmgr networkmanager networkmanager-dinit chrony chrony-dinit nano git"
+BASE_PKGS="base base-devel dinit elogind-dinit linux-zen linux-zen-headers linux-firmware efibootmgr networkmanager networkmanager-dinit chrony chrony-dinit nano git terminus-font"
 
 if [ "$BOOTLOADER_CHOICE" == "1" ]; then
     BASE_PKGS="$BASE_PKGS limine"
@@ -403,7 +416,6 @@ cat << 'EOF' > /mnt/root/chroot-setup.sh
 #!/usr/bin/env bash
 set -Eeuo pipefail
 
-# Catch errors inside chroot as well
 chroot_error() {
     local exit_code=$?
     local line_no=$1
@@ -468,6 +480,9 @@ passwd
 useradd -m -G wheel -s $USER_SHELL $USERNAME
 echo "-> Set password for user '$USERNAME':"
 passwd $USERNAME
+
+# Fix user home directory permissions immediately to prevent permission denied errors
+chown -R $USERNAME:$USERNAME /home/$USERNAME
 
 # --------------------------------------------------
 # Section 21: Privilege Escalation & Sudoers Rules (Passwordless for Wheel)
