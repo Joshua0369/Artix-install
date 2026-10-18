@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # ==============================================================================
-# Artix Linux Custom Interactive Installer (Fixed dwm & AUR handling)
+# Artix Linux Custom Interactive Installer (Suckless DWM & Dmenu Source Build)
 # System: dinit + linux-zen | Optional: Zsh, PipeWire, WMs & Dotfiles, Ly, Fastfetch, Alacritty
 # ==============================================================================
 
@@ -98,7 +98,7 @@ echo "--------------------------------------------------"
 echo " Section 1.1: Window Manager (WM) / Compositor"
 echo "--------------------------------------------------"
 echo "Which Window Manager would you like to install?"
-echo "  1) dwm     (Lightweight X11 tiling window manager)"
+echo "  1) dwm     (Suckless X11 tiling window manager compiled from source)"
 echo "  2) oxwm    (Minimalist window manager)"
 echo "  3) sway    (Wayland tiling compositor)"
 echo "  4) mangowc (Minimalist Wayland compositor/WM)"
@@ -254,7 +254,7 @@ echo " Hostname      : $HOSTNAME"
 echo " Username      : $USERNAME"
 echo " Timezone      : $TIMEZONE"
 case $WM_CHOICE in
-    1) echo " Window Manager: dwm" ;;
+    1) echo " Window Manager: dwm (suckless.org source build)" ;;
     2) echo " Window Manager: oxwm" ;;
     3) echo " Window Manager: sway" ;;
     4) echo " Window Manager: mangowc" ;;
@@ -320,9 +320,9 @@ if [[ "$INSTALL_ALACRITTY" =~ ^[Yy]$ ]]; then
     BASE_PKGS="$BASE_PKGS alacritty ttf-jetbrains-mono"
 fi
 
-# Add official repository WMs & X11 prerequisites if selected
+# Add X11 libraries and server packages if dwm or X11 WMs are selected
 if [ "$WM_CHOICE" == "1" ] || [ "$WM_CHOICE" == "7" ]; then
-    BASE_PKGS="$BASE_PKGS xorg-server xorg-xinit xf86-input-libinput"
+    BASE_PKGS="$BASE_PKGS libx11 libxinerama libxft xorg-server xorg-xinit xf86-input-libinput"
 fi
 if [ "$WM_CHOICE" == "5" ] || [ "$WM_CHOICE" == "7" ]; then
     BASE_PKGS="$BASE_PKGS bspwm sxhkd polybar rofi feh picom xorg-server xorg-xinit xf86-input-libinput"
@@ -681,30 +681,32 @@ runuser -u \$USERNAME -- bash -c "
 rm -rf /tmp/paru
 
 # --------------------------------------------------
-# Section 32: AUR Window Managers & dwm/dmenu (dw/oxwm/mangowc/vxwm)
+# Section 32: Suckless DWM & Dmenu Source Compilation + AUR WMs
 # --------------------------------------------------
 if [ "\$WM_CHOICE" == "1" ] || [ "\$WM_CHOICE" == "7" ]; then
-    echo "[Step 27/34] Installing dwm and dmenu from AUR..."
-    runuser -u \$USERNAME -- bash -c "yay -S --noconfirm dwm-git dmenu || yay -S --noconfirm dwm dmenu" || true
+    echo "[Step 27/34] Cloning and compiling dwm & dmenu from suckless.org..."
+    # Compiling from source requires root privileges for 'make install'
+    cd /tmp
+    git clone https://git.suckless.org/dwm
+    git clone https://git.suckless.org/dmenu
+    cd dwm && make clean install
+    cd ../dmenu && make clean install
+    cd /tmp && rm -rf dwm dmenu
 fi
 
 if [ "\$WM_CHOICE" == "2" ] || [ "\$WM_CHOICE" == "7" ]; then
-    echo "[Step 27/34] Installing oxwm from AUR..."
+    echo "[Step 27.2/34] Installing oxwm from AUR..."
     runuser -u \$USERNAME -- bash -c "yay -S --noconfirm oxwm-git || yay -S --noconfirm oxwm" || true
 fi
 
 if [ "\$WM_CHOICE" == "4" ] || [ "\$WM_CHOICE" == "7" ]; then
-    echo "[Step 27/34] Installing mangowc from AUR..."
+    echo "[Step 27.4/34] Installing mangowc from AUR..."
     runuser -u \$USERNAME -- bash -c "yay -S --noconfirm mangowc-git || yay -S --noconfirm mangowc" || true
 fi
 
 if [ "\$WM_CHOICE" == "6" ] || [ "\$WM_CHOICE" == "7" ]; then
-    echo "[Step 27/34] Installing vxwm from AUR..."
+    echo "[Step 27.6/34] Installing vxwm from AUR..."
     runuser -u \$USERNAME -- bash -c "yay -S --noconfirm vxwm-git || yay -S --noconfirm vxwm" || true
-fi
-
-if [ "\$WM_CHOICE" == "3" ] || [ "\$WM_CHOICE" == "5" ]; then
-    echo "[Step 27/34] Skipping AUR window managers..."
 fi
 
 # --------------------------------------------------
