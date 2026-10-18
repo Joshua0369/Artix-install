@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # ==============================================================================
-# Artix Linux Custom Interactive Installer (Fixed & Finalized)
+# Artix Linux Custom Interactive Installer (Fixed dwm & AUR handling)
 # System: dinit + linux-zen | Optional: Zsh, PipeWire, WMs & Dotfiles, Ly, Fastfetch, Alacritty
 # ==============================================================================
 
@@ -320,9 +320,9 @@ if [[ "$INSTALL_ALACRITTY" =~ ^[Yy]$ ]]; then
     BASE_PKGS="$BASE_PKGS alacritty ttf-jetbrains-mono"
 fi
 
-# Add official repository WMs if selected
+# Add official repository WMs & X11 prerequisites if selected
 if [ "$WM_CHOICE" == "1" ] || [ "$WM_CHOICE" == "7" ]; then
-    BASE_PKGS="$BASE_PKGS dwm dmenu xorg-server xorg-xinit xf86-input-libinput"
+    BASE_PKGS="$BASE_PKGS xorg-server xorg-xinit xf86-input-libinput"
 fi
 if [ "$WM_CHOICE" == "5" ] || [ "$WM_CHOICE" == "7" ]; then
     BASE_PKGS="$BASE_PKGS bspwm sxhkd polybar rofi feh picom xorg-server xorg-xinit xf86-input-libinput"
@@ -390,7 +390,6 @@ fstabgen -U /mnt >> /mnt/etc/fstab
 
 echo "[Step 7/34] Preparing chroot system configuration script..."
 
-# Write configuration values cleanly into the chroot script header
 cat << EOF > /mnt/root/chroot-setup.sh
 #!/usr/bin/env bash
 set -e
@@ -521,242 +520,4 @@ fi
 # --------------------------------------------------
 if [ "\$WM_CHOICE" == "1" ] || [ "\$WM_CHOICE" == "2" ] || [ "\$WM_CHOICE" == "5" ] || [ "\$WM_CHOICE" == "6" ] || [ "\$WM_CHOICE" == "7" ]; then
     echo "[Step 19/34] Configuring .xinitrc session runner for X11 WMs..."
-    DEFAULT_WM="dwm"
-    if [ "\$WM_CHOICE" == "5" ]; then
-        DEFAULT_WM="bspwm"
-    elif [ "\$WM_CHOICE" == "6" ]; then
-        DEFAULT_WM="vxwm"
-    fi
-    cat << XINIT > /home/\$USERNAME/.xinitrc
-# Start Pipewire daemons if present
-if command -v pipewire &>/dev/null; then
-    pipewire &
-    wireplumber &
-    pipewire-pulse &
-fi
-
-exec \$DEFAULT_WM
-XINIT
-else
-    echo "[Step 19/34] Skipping .xinitrc (Wayland-only or no X11 WM selected)..."
-fi
-
-# --------------------------------------------------
-# Section 27: Zsh & Dotfiles Configuration
-# --------------------------------------------------
-if [[ "\$INSTALL_ZSH" =~ ^[Yy]\$ ]]; then
-    echo "[Step 20/34] Fetching and applying gh0stzk's Zsh shell configuration..."
-    git clone https://github.com/gh0stzk/dotfiles.git /tmp/gh0stzk-dots
-    mkdir -p /home/\$USERNAME/.config/zsh
-    if [ -f /tmp/gh0stzk-dots/home/.zshrc ]; then
-        cp /tmp/gh0stzk-dots/home/.zshrc /home/\$USERNAME/.zshrc
-    fi
-
-    echo "[Step 21/34] Adding power aliases to .zshrc..."
-    cat << 'ALIASES' >> /home/\$USERNAME/.zshrc
-
-# Power shortcuts
-alias reboot='sudo reboot'
-alias poweroff='sudo poweroff'
-ALIASES
-    rm -rf /tmp/gh0stzk-dots
-else
-    echo "[Step 20/34] Skipping gh0stzk Zsh dotfiles..."
-    echo "[Step 21/34] Skipping Zsh power aliases..."
-fi
-
-# --------------------------------------------------
-# Section 28: dwm, bspwm & vxwm Dotfiles Setup
-# --------------------------------------------------
-if [[ "\$INSTALL_DWM_CONFIG" =~ ^[Yy]\$ ]]; then
-    echo "[Step 22/34] Installing dwm dotfiles (mich-murphy/dwm-dotfiles)..."
-    git clone https://github.com/mich-murphy/dwm-dotfiles.git /tmp/dwm-dots
-    mkdir -p /home/\$USERNAME/.config/dwm
-    if [ -d /tmp/dwm-dots/dwm ]; then
-        cp -rf /tmp/dwm-dots/dwm/* /home/\$USERNAME/.config/dwm/
-    else
-        cp -rf /tmp/dwm-dots/* /home/\$USERNAME/.config/dwm/
-    fi
-    rm -rf /tmp/dwm-dots
-else
-    echo "[Step 22/34] Skipping dwm dotfiles installation..."
-fi
-
-if [[ "\$INSTALL_BSPWM_CONFIG" =~ ^[Yy]\$ ]]; then
-    echo "[Step 22.3/34] Installing bspwm dotfiles (gh0stzk/dotfiles)..."
-    git clone https://github.com/gh0stzk/dotfiles.git /tmp/gh0stzk-bspwm
-    mkdir -p /home/\$USERNAME/.config
-    if [ -d /tmp/gh0stzk-bspwm/bspwm ]; then
-        cp -rf /tmp/gh0stzk-bspwm/bspwm /home/\$USERNAME/.config/
-    fi
-    if [ -d /tmp/gh0stzk-bspwm/sxhkd ]; then
-        cp -rf /tmp/gh0stzk-bspwm/sxhkd /home/\$USERNAME/.config/
-    fi
-    if [ -d /tmp/gh0stzk-bspwm/polybar ]; then
-        cp -rf /tmp/gh0stzk-bspwm/polybar /home/\$USERNAME/.config/
-    fi
-    rm -rf /tmp/gh0stzk-bspwm
-else
-    echo "[Step 22.3/34] Skipping bspwm dotfiles installation..."
-fi
-
-if [[ "\$INSTALL_VXWM_CONFIG" =~ ^[Yy]\$ ]]; then
-    echo "[Step 22.6/34] Installing vxwm dotfiles (ceapeapea/vxwm-dotfiles)..."
-    git clone https://github.com/ceapeapea/vxwm-dotfiles.git /tmp/vxwm-dots
-    mkdir -p /home/\$USERNAME/.config
-    cp -rf /tmp/vxwm-dots/* /home/\$USERNAME/.config/ 2>/dev/null || true
-    rm -rf /tmp/vxwm-dots
-else
-    echo "[Step 22.6/34] Skipping vxwm dotfiles installation..."
-fi
-
-# --------------------------------------------------
-# Section 29: Fastfetch & Awesome-Fastfetch Setup
-# --------------------------------------------------
-if [[ "\$INSTALL_FASTFETCH" =~ ^[Yy]\$ ]]; then
-    echo "[Step 23/34] Cloning sakibreza229/awesome-fastfetch preset..."
-    runuser -u \$USERNAME -- bash -c "
-        cd /tmp &&
-        git clone https://github.com/sakibreza229/awesome-fastfetch.git &&
-        cd awesome-fastfetch &&
-        chmod +x awesome-fastfetch.sh &&
-        ./awesome-fastfetch.sh -c compact -n --skip-shell
-    "
-    rm -rf /tmp/awesome-fastfetch
-else
-    echo "[Step 23/34] Skipping Fastfetch configuration..."
-fi
-
-# --------------------------------------------------
-# Section 30: Alacritty Font & Config Setup
-# --------------------------------------------------
-if [[ "\$INSTALL_ALACRITTY" =~ ^[Yy]\$ ]]; then
-    echo "[Step 24/34] Writing Alacritty config (JetBrains Mono, Size 14)..."
-    mkdir -p /home/\$USERNAME/.config/alacritty
-    cat << 'ALACRITTY' > /home/\$USERNAME/.config/alacritty/alacritty.toml
-[font]
-size = 14.0
-
-[font.normal]
-family = "JetBrains Mono"
-style = "Regular"
-
-[font.bold]
-family = "JetBrains Mono"
-style = "Bold"
-
-[font.italic]
-family = "JetBrains Mono"
-style = "Italic"
-
-[window]
-padding = { x = 10, y = 10 }
-dynamic_padding = true
-opacity = 0.95
-ALACRITTY
-else
-    echo "[Step 24/34] Skipping Alacritty configuration..."
-fi
-
-chown -R \$USERNAME:\$USERNAME /home/\$USERNAME
-
-# --------------------------------------------------
-# Section 31: AUR Helpers Build (yay & paru) via runuser
-# --------------------------------------------------
-echo "[Step 25/34] Compiling and installing 'yay' AUR helper..."
-runuser -u \$USERNAME -- bash -c "
-    cd /tmp &&
-    git clone https://aur.archlinux.org/yay.git &&
-    cd yay &&
-    makepkg -si --noconfirm
-"
-rm -rf /tmp/yay
-
-echo "[Step 26/34] Compiling and installing 'paru' AUR helper..."
-runuser -u \$USERNAME -- bash -c "
-    cd /tmp &&
-    git clone https://aur.archlinux.org/paru.git &&
-    cd paru &&
-    makepkg -si --noconfirm
-"
-rm -rf /tmp/paru
-
-# --------------------------------------------------
-# Section 32: AUR Window Managers (oxwm, mangowc & vxwm)
-# --------------------------------------------------
-if [ "\$WM_CHOICE" == "2" ] || [ "\$WM_CHOICE" == "7" ]; then
-    echo "[Step 27/34] Installing oxwm from AUR..."
-    runuser -u \$USERNAME -- bash -c "yay -S --noconfirm oxwm-git || yay -S --noconfirm oxwm" || true
-fi
-
-if [ "\$WM_CHOICE" == "4" ] || [ "\$WM_CHOICE" == "7" ]; then
-    echo "[Step 27/34] Installing mangowc from AUR..."
-    runuser -u \$USERNAME -- bash -c "yay -S --noconfirm mangowc-git || yay -S --noconfirm mangowc" || true
-fi
-
-if [ "\$WM_CHOICE" == "6" ] || [ "\$WM_CHOICE" == "7" ]; then
-    echo "[Step 27/34] Installing vxwm from AUR..."
-    runuser -u \$USERNAME -- bash -c "yay -S --noconfirm vxwm-git || yay -S --noconfirm vxwm" || true
-fi
-
-if [ "\$WM_CHOICE" == "1" ] || [ "\$WM_CHOICE" == "3" ] || [ "\$WM_CHOICE" == "5" ]; then
-    echo "[Step 27/34] Skipping AUR window managers..."
-fi
-
-# --------------------------------------------------
-# Section 33: Bootloader Deployment (Limine or GRUB)
-# --------------------------------------------------
-if [ "\$BOOTLOADER_CHOICE" == "1" ]; then
-    echo "[Step 28/34] Deploying Limine bootloader binaries..."
-    mkdir -p /boot/EFI/BOOT
-    cp /usr/share/limine/BOOTX64.EFI /boot/EFI/BOOT/
-
-    echo "[Step 29/34] Writing limine.conf (Timeout: NO)..."
-    ROOT_UUID=\$(blkid -s UUID -o value \$ROOT_PART)
-    cat << LIMINE > /boot/limine.conf
-timeout: no
-
-/Artix Linux (Zen Kernel)
-    protocol: linux
-    path: boot():/vmlinuz-linux-zen
-    module_path: boot():/initramfs-linux-zen.img
-    cmdline: root=UUID=\$ROOT_UUID rw quiet
-LIMINE
-
-    echo "[Step 30/34] Registering Limine in UEFI NVRAM..."
-    DISK_DEV=\$(echo "\$BOOT_PART" | sed -E 's/p?[0-9]+$//')
-    PART_NUM=\$(echo "\$BOOT_PART" | grep -o '[0-9]*\$')
-
-    efibootmgr --create --disk "\$DISK_DEV" --part "\$PART_NUM" --label "Limine" --loader '\\EFI\\BOOT\\BOOTX64.EFI'
-else
-    echo "[Step 28/34] Installing GRUB bootloader..."
-    grub-install --target=x86_64-efi --efi-directory=/boot --bootloader-id=GRUB
-
-    echo "[Step 29/34] Generating GRUB configuration file..."
-    grub-mkconfig -o /boot/grub/grub.cfg
-
-    echo "[Step 30/34] GRUB NVRAM registration complete."
-fi
-
-echo "[Step 31/34] System configuration inside chroot complete!"
-EOF
-
-
-# ##################################################
-# CATEGORY: EXECUTION & CLEANUP
-# ##################################################
-
-chmod +x /mnt/root/chroot-setup.sh
-
-echo "==> Executing chroot system deployment..."
-artix-chroot /mnt /root/chroot-setup.sh
-
-echo "[Step 32/34] Cleaning up installation files and unmounting system partitions..."
-rm /mnt/root/chroot-setup.sh
-umount -R /mnt
-
-echo ""
-echo "=================================================="
-echo "      Installation Finished Successfully!         "
-echo "  You can now remove your USB and type 'reboot'.  "
-echo "=================================================="
+    DEFAULT_WM
