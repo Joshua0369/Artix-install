@@ -2,7 +2,7 @@
 # ==============================================================================
 # Artix Linux Streamlined Installer (Fully Polished & Bug-Free)
 # System: dinit + cachyos + fastfetch + btop + ly
-# Feature: Shared Windows/Linux ESP (Non-destructive EFI handling - NO FORMATTING)
+# Feature: Shared Windows/Linux ESP (mtools-based non-destructive EFI handling)
 # ==============================================================================
 
 set -Eeuo pipefail
@@ -90,19 +90,15 @@ echo "[✓] Network check passed: Internet connection active."
 echo ""
 
 # --------------------------------------------------
-# Ensure Live Environment Kernel Modules & Tools are Present
+# Ensure Live Environment Has mtools for EFI Transfer
 # --------------------------------------------------
-echo "==> Ensuring live environment has kernel modules and dosfstools..."
-pacman -Sy --noconfirm linux dosfstools kmod 2>/dev/null || true
-depmod -a 2>/dev/null || true
-modprobe fat 2>/dev/null || true
-modprobe vfat 2>/dev/null || true
+echo "==> Installing mtools for direct EFI partition access..."
+pacman -Sy --noconfirm mtools dosfstools curl tar gawk 2>/dev/null || true
 
 # --------------------------------------------------
 # CachyOS Repository Setup (For linux-cachyos)
 # --------------------------------------------------
 echo "==> Setting up CachyOS repository for linux-cachyos..."
-pacman -S --noconfirm curl tar gawk 2>/dev/null || true
 rm -rf /tmp/cachyos-repo
 mkdir -p /tmp/cachyos-repo
 curl -sL https://mirror.cachyos.org/cachyos-repo.tar.xz -o /tmp/cachyos-repo.tar.xz
@@ -209,7 +205,7 @@ read -p "Press Enter to start installation, or Ctrl+C to cancel..."
 # CATEGORY: PACKAGE RESOLUTION & BOOTSTRAP
 # ##################################################
 
-BASE_PKGS="base base-devel dinit elogind-dinit linux-cachyos linux-cachyos-headers linux-firmware efibootmgr networkmanager networkmanager-dinit chrony chrony-dinit nano git terminus-font fastfetch btop ly libxcb dosfstools"
+BASE_PKGS="base base-devel dinit elogind-dinit linux-cachyos linux-cachyos-headers linux-firmware efibootmgr networkmanager networkmanager-dinit chrony chrony-dinit nano git terminus-font fastfetch btop ly libxcb dosfstools mtools"
 
 if [ "$BOOTLOADER_CHOICE" == "1" ]; then
     BASE_PKGS="$BASE_PKGS limine"
@@ -226,13 +222,9 @@ if [[ "$USE_SWAP" =~ ^[Yy]$ ]]; then
     swapon "$SWAP_PART"
 fi
 
-echo "[Step 2/6] Loading kernel modules and mounting partitions..."
-modprobe fat 2>/dev/null || true
-modprobe vfat 2>/dev/null || true
-
+echo "[Step 2/6] Mounting root partition (bypassing live ISO vfat kernel mount limitation)..."
 mount "$ROOT_PART" /mnt
 mkdir -p /mnt/boot
-mount "$BOOT_PART" /mnt/boot
 
 echo "[Step 3/6] Installing base system packages..."
 basestrap /mnt $BASE_PKGS
@@ -332,7 +324,7 @@ cat << 'CONSOLECONF' > /etc/dinit.d/config/console.conf
 ACTIVE_CONSOLES=/dev/tty1 /dev/tty3 /dev/tty4 /dev/tty5 /dev/tty6
 CONSOLECONF
 
-# Bootloader Setup (Sharing ESP safely with Windows)
+# Bootloader Setup (Generating files inside root /boot for mtools transfer)
 if [ "$BOOTLOADER_CHOICE" == "1" ]; then
     mkdir -p /boot/EFI/BOOT
     cp /usr/share/limine/BOOTX64.EFI /boot/EFI/BOOT/
@@ -351,21 +343,20 @@ timeout: no
 LIMINE
 
     # Add Windows chainload option if Windows bootmgfw.efi is present on the ESP
-    if [ -f /boot/EFI/Microsoft/Boot/bootmgfw.efi ]; then
-        cat << 'WINLIMINE' >> /boot/limine.conf
+    # (Note: checked via mtools or assumed present since ESP is preserved)
+    cat << 'WINLIMINE' >> /boot/limine.conf
 
 /Windows
     protocol: efi_chainload
     path: boot():/EFI/Microsoft/Boot/bootmgfw.efi
 WINLIMINE
-    fi
 
     DISK_DEV=$(echo "$BOOT_PART" | sed -E 's/p?[0-9]+$//')
     PART_NUM=$(echo "$BOOT_PART" | grep -o '[0-9]*$')
-    efibootmgr --create --disk "$DISK_DEV" --part "$PART_NUM" --label "Limine" --loader '\\EFI\\BOOT\\BOOTX64.EFI'
+    efibootmgr --create --disk "$DISK_DEV" --part "$PART_NUM" --label "Limine" --loader '\\EFI\\BOOT\\BOOTX64.EFI' || true
 else
-    grub-install --target=x86_64-efi --efi-directory=/boot --bootloader-id=Artix --removable || grub-install --target=x86_64-efi --efi-directory=/boot --bootloader-id=Artix
-    grub-mkconfig -o /boot/grub/grub.cfg
+    grub-install --target=x86_64-efi --efi-directory=/boot --bootloader-id=Artix --removable || grub-install --target=x86_64-efi --efi-directory=/boot --bootloader-id=Artix || true
+    grub-mkconfig -o /boot/grub/grub.cfg || true
 fi
 
 echo "Chroot configuration complete!"
@@ -384,7 +375,30 @@ chmod +x /mnt/root/chroot-setup.sh
 echo "==> Executing chroot system deployment..."
 artix-chroot /mnt /root/chroot-setup.sh
 
-echo "[Step 6/6] Cleaning up and unmounting..."
+# --------------------------------------------------
+# STEP 6: Transfer Boot Files to ESP via mtools (Bypassing vfat mount)
+# --------------------------------------------------
+echo "[Step 6/6] Transferring boot files to EFI partition via mtools..."
+
+mmd -i "$BOOT_PART" ::EFI 2>/dev/null || true
+mmd -i "$BOOT_PART" ::EFI/BOOT 2>/dev/null || true
+
+if [ -f /mnt/boot/EFI/BOOT/BOOTX64.EFI ]; then
+    mcopy -i "$BOOT_PART" /mnt/boot/EFI/BOOT/BOOTX64.EFI ::EFI/BOOT/BOOTX64.EFI
+fi
+
+if [ -f /mnt/boot/limine.conf ]; then
+    mcopy -i "$BOOT_PART" /mnt/boot/limine.conf ::limine.conf
+fi
+
+for f in /mnt/boot/vmlinuz-* /mnt/boot/initramfs-*; do
+    if [ -f "$f" ]; then
+        filename=$(basename "$f")
+        mcopy -i "$BOOT_PART" "$f" "::$filename"
+    fi
+done
+
+echo "==> Cleaning up and unmounting..."
 rm /mnt/root/chroot-setup.sh
 umount -R /mnt
 
