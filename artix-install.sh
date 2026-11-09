@@ -93,12 +93,18 @@ echo ""
 # CachyOS Repository Setup (For linux-cachyos)
 # --------------------------------------------------
 echo "==> Setting up CachyOS repository for linux-cachyos..."
-pacman -S --noconfirm curl tar 2>/dev/null || true
-curl -s https://mirror.cachyos.org/cachyos-repo.tar.xz -o /tmp/cachyos-repo.tar.xz
+pacman -S --noconfirm curl tar gawk 2>/dev/null || true
+rm -rf /tmp/cachyos-repo
 mkdir -p /tmp/cachyos-repo
+curl -sL https://mirror.cachyos.org/cachyos-repo.tar.xz -o /tmp/cachyos-repo.tar.xz
 tar xf /tmp/cachyos-repo.tar.xz -C /tmp/cachyos-repo --strip-components=1 2>/dev/null || tar xf /tmp/cachyos-repo.tar.xz -C /tmp/cachyos-repo
+
 if [ -f /tmp/cachyos-repo/cachyos-repo.sh ]; then
-    yes | bash /tmp/cachyos-repo/cachyos-repo.sh
+    pushd /tmp/cachyos-repo >/dev/null
+    set +o pipefail
+    yes | bash cachyos-repo.sh || true
+    set -o pipefail
+    popd >/dev/null
 else
     echo "[!] Warning: CachyOS repo script not found, proceeding with manual repo insertion..."
 fi
