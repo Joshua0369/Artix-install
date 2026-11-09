@@ -16,7 +16,7 @@ cleanup_on_error() {
     echo ""
     echo "=================================================================="
     echo "  [!] INSTALLATION ERROR DETECTED"
-    echo "  The script broke at line $line_no with exit code $exit_code."
+    echo "  The script broke at line $line_no with exit code$exit_code."
     echo "  Executing safe cleanup: lazy unmounting /mnt..."
     echo "=================================================================="
     umount -R /mnt 2>/dev/null || true
@@ -93,21 +93,34 @@ echo ""
 # Repository Setup (Universe, Extra, Multilib, CachyOS)
 # --------------------------------------------------
 echo "==> Enabling Universe, Extra, and Multilib repositories..."
-echo "[universe]" >> /etc/pacman.conf
-echo "Server = https://universe.artixlinux.org/\$arch" >> /etc/pacman.conf
+if ! grep -q "[universe]" /etc/pacman.conf; then
+    cat << 'EOF' >> /etc/pacman.conf
+
+[universe]
+Server = https://universe.artixlinux.org/\$arch
+EOF
+fi
+
 pacman -Sy --noconfirm
 pacman -S --noconfirm artix-archlinux-support
 pacman-key --populate archlinux
 
-# Append Arch extra and multilib repositories
-cat << 'EOF' >> /etc/pacman.conf
+if ! grep -q "[extra]" /etc/pacman.conf; then
+    cat << 'EOF' >> /etc/pacman.conf
 
 [extra]
 Include = /etc/pacman.d/mirrorlist-arch
+EOF
+fi
+
+if ! grep -q "[multilib]" /etc/pacman.conf; then
+    cat << 'EOF' >> /etc/pacman.conf
 
 [multilib]
 Include = /etc/pacman.d/mirrorlist-arch
 EOF
+fi
+
 pacman -Sy --noconfirm
 
 echo "==> Setting up CachyOS repository for linux-cachyos..."
@@ -212,7 +225,7 @@ read -p "Press Enter to start installation, or Ctrl+C to cancel..."
 # CATEGORY: PACKAGE RESOLUTION & BOOTSTRAP
 # ##################################################
 
-BASE_PKGS="base base-devel dinit elogind-dinit linux-cachyos linux-cachyos-headers linux-firmware efibootmgr networkmanager networkmanager-dinit chrony chrony-dinit nano git terminus-font fastfetch btop ly libxcb base-devel"
+BASE_PKGS="base base-devel dinit elogind-dinit linux-cachyos linux-cachyos-headers linux-firmware efibootmgr networkmanager networkmanager-dinit chrony chrony-dinit nano git terminus-font fastfetch btop ly libxcb"
 
 if [ "$BOOTLOADER_CHOICE" == "1" ]; then
     BASE_PKGS="$BASE_PKGS limine"
@@ -237,6 +250,7 @@ if mount "$BOOT_PART" /tmp/efi_check_mnt 2>/dev/null; then
         echo "[✓] Skipping partition format to preserve existing Windows files and share the ESP."
     else
         echo "==> No Windows bootloader detected. Formatting $BOOT_PART as FAT32..."
+        umount /tmp/efi_check_mnt
         mkfs.vfat -F 32 "$BOOT_PART"
     fi
     umount /tmp/efi_check_mnt 2>/dev/null || true
@@ -278,7 +292,7 @@ chroot_error() {
     echo ""
     echo "=================================================================="
     echo "  [!] CHROOT INSTALLATION ERROR DETECTED"
-    echo "  The chroot script broke at line $line_no with exit code $exit_code."
+    echo "  The chroot script broke at line $line_no with exit code$exit_code."
     echo "=================================================================="
     exit "$exit_code"
 }
@@ -324,11 +338,9 @@ chmod 440 /etc/sudoers.d/wheel
 echo "$USERNAME ALL=(ALL) NOPASSWD: /usr/bin/reboot, /usr/bin/poweroff, /usr/sbin/reboot, /usr/sbin/poweroff" > /etc/sudoers.d/reboot
 chmod 440 /etc/sudoers.d/reboot
 
-# Install Paru (AUR helper) via paru-bin as the regular user
+# Install Paru (AUR helper) via paru-bin as the regular user safely in home dir
 echo "==> Installing paru-bin (AUR helper)..."
-su - $USERNAME -c "git clone https://aur.archlinux.org/paru-bin.git /tmp/paru-bin && cd /tmp/paru-bin && makepkg -si --noconfirm"
-rm -rf /home/$USERNAME/paru-bin 2>/dev/null || true
-rm -rf /tmp/paru-bin 2>/dev/null || true
+su - $USERNAME -c "git clone https://aur.archlinux.org/paru-bin.git ~/paru-bin && cd ~/paru-bin && makepkg -si --noconfirm && rm -rf ~/paru-bin"
 
 # Dinit Services (Offline boot symlinks)
 mkdir -p /etc/dinit.d/boot.d
@@ -360,7 +372,7 @@ if [ "$BOOTLOADER_CHOICE" == "1" ]; then
     mkdir -p /boot/EFI/BOOT
     cp /usr/share/limine/BOOTX64.EFI /boot/EFI/BOOT/
 
-    ROOT_UUID=$(blkid -s UUID -o value $ROOT_PART)
+    ROOT_UUID=$(blkid -s UUID -o value$ROOT_PART)
     
     # Configure Limine with Artix and an optional Windows entry (if Windows exists)
     cat << LIMINE > /boot/limine.conf
@@ -383,8 +395,8 @@ LIMINE
 WINLIMINE
     fi
 
-    DISK_DEV=$(echo "$BOOT_PART" | sed -E 's/p?[0-9]+$//')
-    PART_NUM=$(echo "$BOOT_PART" | grep -o '[0-9]*$')
+    DISK_DEV=$(echo "$BOOT_PART" \vert{} sed -E 's/p?[0-9]+$//')
+    PART_NUM=$(echo "$BOOT_PART" \vert{} grep -o '[0-9]*$')
     efibootmgr --create --disk "$DISK_DEV" --part "$PART_NUM" --label "Limine" --loader '\\EFI\\BOOT\\BOOTX64.EFI'
 else
     grub-install --target=x86_64-efi --efi-directory=/boot --bootloader-id=Artix --removable || grub-install --target=x86_64-efi --efi-directory=/boot --bootloader-id=Artix
@@ -396,23 +408,4 @@ EOF
 
 # Inject variables into chroot script
 sed -i "s|__HOSTNAME__|$HOSTNAME|g" /mnt/root/chroot-setup.sh
-sed -i "s|__USERNAME__|$USERNAME|g" /mnt/root/chroot-setup.sh
-sed -i "s|__TIMEZONE__|$TIMEZONE|g" /mnt/root/chroot-setup.sh
-sed -i "s|__ROOT_PART__|$ROOT_PART|g" /mnt/root/chroot-setup.sh
-sed -i "s|__BOOT_PART__|$BOOT_PART|g" /mnt/root/chroot-setup.sh
-sed -i "s|__BOOTLOADER_CHOICE__|$BOOTLOADER_CHOICE__|g" /mnt/root/chroot-setup.sh
-
-chmod +x /mnt/root/chroot-setup.sh
-
-echo "==> Executing chroot system deployment..."
-artix-chroot /mnt /root/chroot-setup.sh
-
-echo "[Step 6/6] Cleaning up and unmounting..."
-rm /mnt/root/chroot-setup.sh
-umount -R /mnt
-
-echo ""
-echo "================================================--"
-echo "      Installation Finished Successfully!         "
-echo "  You can now remove your USB and type 'reboot'.  "
-echo "================================================--"
+sed -i "s|__USERNAME__|$USERNAME|g" /
