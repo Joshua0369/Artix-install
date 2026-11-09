@@ -153,9 +153,9 @@ fi
 echo ""
 
 
-# ##################################################
+# #################---------------------------------
 # CATEGORY: USER PROMPTS & CONFIGURATION
-# ##################################################
+# #################---------------------------------
 
 read -p "Enter hostname (PC name) [default: 58]: " HOSTNAME
 HOSTNAME=${HOSTNAME:-58}
@@ -226,9 +226,9 @@ echo ""
 read -p "Press Enter to start installation, or Ctrl+C to cancel..."
 
 
-# ##################################################
+# #################---------------------------------
 # CATEGORY: PACKAGE RESOLUTION & BOOTSTRAP
-# ##################################################
+# #################################################-
 
 BASE_PKGS="base base-devel dinit elogind-dinit linux-cachyos linux-cachyos-headers linux-firmware efibootmgr networkmanager networkmanager-dinit chrony chrony-dinit nano git terminus-font fastfetch btop ly libxcb"
 
@@ -280,9 +280,9 @@ cp /etc/pacman.conf /mnt/etc/pacman.conf
 cp -r /etc/pacman.d/ /mnt/etc/
 
 
-# ##################################################
+# #################---------------------------------
 # CATEGORY: CHROOT SYSTEM CONFIGURATION
-# ##################################################
+# #################################################-
 
 echo "[Step 5/6] Configuring system inside chroot..."
 
