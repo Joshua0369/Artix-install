@@ -103,6 +103,10 @@ fi
 
 pacman -Sy --noconfirm
 pacman -S --noconfirm artix-archlinux-support
+
+# Initialize keyrings properly before populating
+pacman-key --init
+pacman-key --populate artix
 pacman-key --populate archlinux
 
 if ! grep -q "\[extra\]" /etc/pacman.conf; then
@@ -201,7 +205,6 @@ if [[ "$USE_SWAP" =~ ^[Yy]$ ]]; then
 fi
 
 echo ""
-# New Bootloader Overwrite Option
 read -p "Do you want to install or overwrite the bootloader? (y/n) [default: y]: " INSTALL_BOOTLOADER
 INSTALL_BOOTLOADER=${INSTALL_BOOTLOADER:-y}
 
