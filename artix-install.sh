@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # ==============================================================================
 # Artix Linux Streamlined Installer (Fully Polished & Bug-Free)
-# System: dinit + cachyos + fastfetch + btop + ly
+# System: dinit + cachyos + extra + multilib + paru-bin + fastfetch + btop + ly
 # Feature: Shared Windows/Linux ESP (Non-destructive EFI handling)
 # ==============================================================================
 
@@ -90,8 +90,26 @@ echo "[✓] Network check passed: Internet connection active."
 echo ""
 
 # --------------------------------------------------
-# CachyOS Repository Setup (For linux-cachyos)
+# Repository Setup (Universe, Extra, Multilib, CachyOS)
 # --------------------------------------------------
+echo "==> Enabling Universe, Extra, and Multilib repositories..."
+echo "[universe]" >> /etc/pacman.conf
+echo "Server = https://universe.artixlinux.org/\$arch" >> /etc/pacman.conf
+pacman -Sy --noconfirm
+pacman -S --noconfirm artix-archlinux-support
+pacman-key --populate archlinux
+
+# Append Arch extra and multilib repositories
+cat << 'EOF' >> /etc/pacman.conf
+
+[extra]
+Include = /etc/pacman.d/mirrorlist-arch
+
+[multilib]
+Include = /etc/pacman.d/mirrorlist-arch
+EOF
+pacman -Sy --noconfirm
+
 echo "==> Setting up CachyOS repository for linux-cachyos..."
 pacman -S --noconfirm curl tar 2>/dev/null || true
 curl -s https://mirror.cachyos.org/cachyos-repo.tar.xz -o /tmp/cachyos-repo.tar.xz
@@ -104,7 +122,7 @@ else
 fi
 pacman -Sy --noconfirm
 
-echo "[✓] CachyOS repository configured."
+echo "[✓] Repositories configured successfully."
 echo ""
 
 # --------------------------------------------------
@@ -194,7 +212,7 @@ read -p "Press Enter to start installation, or Ctrl+C to cancel..."
 # CATEGORY: PACKAGE RESOLUTION & BOOTSTRAP
 # ##################################################
 
-BASE_PKGS="base base-devel dinit elogind-dinit linux-cachyos linux-cachyos-headers linux-firmware efibootmgr networkmanager networkmanager-dinit chrony chrony-dinit nano git terminus-font fastfetch btop ly libxcb"
+BASE_PKGS="base base-devel dinit elogind-dinit linux-cachyos linux-cachyos-headers linux-firmware efibootmgr networkmanager networkmanager-dinit chrony chrony-dinit nano git terminus-font fastfetch btop ly libxcb base-devel"
 
 if [ "$BOOTLOADER_CHOICE" == "1" ]; then
     BASE_PKGS="$BASE_PKGS limine"
@@ -239,7 +257,7 @@ basestrap /mnt $BASE_PKGS
 echo "[Step 4/6] Generating fstab..."
 fstabgen -U /mnt >> /mnt/etc/fstab
 
-echo "==> Propagating CachyOS repository config to installed system..."
+echo "==> Propagating repository config to installed system..."
 cp /etc/pacman.conf /mnt/etc/pacman.conf
 cp -r /etc/pacman.d/ /mnt/etc/
 
@@ -306,12 +324,18 @@ chmod 440 /etc/sudoers.d/wheel
 echo "$USERNAME ALL=(ALL) NOPASSWD: /usr/bin/reboot, /usr/bin/poweroff, /usr/sbin/reboot, /usr/sbin/poweroff" > /etc/sudoers.d/reboot
 chmod 440 /etc/sudoers.d/reboot
 
+# Install Paru (AUR helper) via paru-bin as the regular user
+echo "==> Installing paru-bin (AUR helper)..."
+su - $USERNAME -c "git clone https://aur.archlinux.org/paru-bin.git /tmp/paru-bin && cd /tmp/paru-bin && makepkg -si --noconfirm"
+rm -rf /home/$USERNAME/paru-bin 2>/dev/null || true
+rm -rf /tmp/paru-bin 2>/dev/null || true
+
 # Dinit Services (Offline boot symlinks)
 mkdir -p /etc/dinit.d/boot.d
 ln -sf /etc/dinit.d/chronyd /etc/dinit.d/boot.d/
 ln -sf /etc/dinit.d/NetworkManager /etc/dinit.d/boot.d/
 
-# Create Ly Dinit Service Definition File (Corrected binary path)
+# Create Ly Dinit Service Definition File (Correct binary path)
 cat << 'LYSERVICE' > /etc/dinit.d/ly
 type = process
 restart = true
