@@ -98,7 +98,7 @@ curl -s https://mirror.cachyos.org/cachyos-repo.tar.xz -o /tmp/cachyos-repo.tar.
 mkdir -p /tmp/cachyos-repo
 tar xf /tmp/cachyos-repo.tar.xz -C /tmp/cachyos-repo --strip-components=1 2>/dev/null || tar xf /tmp/cachyos-repo.tar.xz -C /tmp/cachyos-repo
 if [ -f /tmp/cachyos-repo/cachyos-repo.sh ]; then
-    bash /tmp/cachyos-repo/cachyos-repo.sh --noconfirm
+    yes | bash /tmp/cachyos-repo/cachyos-repo.sh
 else
     echo "[!] Warning: CachyOS repo script not found, proceeding with manual repo insertion..."
 fi
@@ -219,7 +219,6 @@ if mount "$BOOT_PART" /tmp/efi_check_mnt 2>/dev/null; then
         echo "[✓] Skipping partition format to preserve existing Windows files and share the ESP."
     else
         echo "==> No Windows bootloader detected. Formatting $BOOT_PART as FAT32..."
-        umount /tmp/efi_check_mnt
         mkfs.vfat -F 32 "$BOOT_PART"
     fi
     umount /tmp/efi_check_mnt 2>/dev/null || true
@@ -312,12 +311,12 @@ mkdir -p /etc/dinit.d/boot.d
 ln -sf /etc/dinit.d/chronyd /etc/dinit.d/boot.d/
 ln -sf /etc/dinit.d/NetworkManager /etc/dinit.d/boot.d/
 
-# Create Ly Dinit Service Definition File (Correct binary path and signal syntax)
+# Create Ly Dinit Service Definition File (Corrected binary path)
 cat << 'LYSERVICE' > /etc/dinit.d/ly
 type = process
 restart = true
 smooth-recovery = true
-command = /usr/bin/ly-dm
+command = /usr/bin/ly
 depends-on = login.target
 term-signal = HUP
 options = shares-console
