@@ -90,9 +90,11 @@ echo "[✓] Network check passed: Internet connection active."
 echo ""
 
 # --------------------------------------------------
-# Repository Setup (Extra, Multilib, CachyOS)
+# Repository Setup (Extra, Multilib, CachyOS - No Universe)
 # --------------------------------------------------
-echo "==> Initializing pacman keys..."
+echo "==> Purging Universe repository and initializing pacman keys..."
+sed -i '/^\[universe\]/,+2d' /etc/pacman.conf
+
 pacman-key --init
 pacman-key --populate artix
 
@@ -228,7 +230,7 @@ read -p "Press Enter to start installation, or Ctrl+C to cancel..."
 
 # #################---------------------------------
 # CATEGORY: PACKAGE RESOLUTION & BOOTSTRAP
-# #################################################-
+# #################---------------------------------
 
 BASE_PKGS="base base-devel dinit elogind-dinit linux-cachyos linux-cachyos-headers linux-firmware efibootmgr networkmanager networkmanager-dinit chrony chrony-dinit nano git terminus-font fastfetch btop ly libxcb"
 
@@ -282,7 +284,7 @@ cp -r /etc/pacman.d/ /mnt/etc/
 
 # #################---------------------------------
 # CATEGORY: CHROOT SYSTEM CONFIGURATION
-# #################################################-
+# #################---------------------------------
 
 echo "[Step 5/6] Configuring system inside chroot..."
 
