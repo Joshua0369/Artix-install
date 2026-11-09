@@ -2,7 +2,7 @@
 # ==============================================================================
 # Artix Linux Streamlined Installer (Fully Polished & Bug-Free)
 # System: dinit + cachyos + extra + multilib + paru-bin + fastfetch + btop + ly
-# Feature: Shared Windows/Linux ESP (Non-destructive EFI handling)
+# Feature: Shared Windows/Linux ESP with optional bootloader overwrite prompt
 # ==============================================================================
 
 set -Eeuo pipefail
@@ -16,7 +16,7 @@ cleanup_on_error() {
     echo ""
     echo "=================================================================="
     echo "  [!] INSTALLATION ERROR DETECTED"
-    echo "  The script broke at line $line_no with exit code$exit_code."
+    echo "  The script broke at line $line_no with exit code $exit_code."
     echo "  Executing safe cleanup: lazy unmounting /mnt..."
     echo "=================================================================="
     umount -R /mnt 2>/dev/null || true
@@ -93,7 +93,7 @@ echo ""
 # Repository Setup (Universe, Extra, Multilib, CachyOS)
 # --------------------------------------------------
 echo "==> Enabling Universe, Extra, and Multilib repositories..."
-if ! grep -q "[universe]" /etc/pacman.conf; then
+if ! grep -q "\[universe\]" /etc/pacman.conf; then
     cat << 'EOF' >> /etc/pacman.conf
 
 [universe]
@@ -105,7 +105,7 @@ pacman -Sy --noconfirm
 pacman -S --noconfirm artix-archlinux-support
 pacman-key --populate archlinux
 
-if ! grep -q "[extra]" /etc/pacman.conf; then
+if ! grep -q "\[extra\]" /etc/pacman.conf; then
     cat << 'EOF' >> /etc/pacman.conf
 
 [extra]
@@ -113,7 +113,7 @@ Include = /etc/pacman.d/mirrorlist-arch
 EOF
 fi
 
-if ! grep -q "[multilib]" /etc/pacman.conf; then
+if ! grep -q "\[multilib\]" /etc/pacman.conf; then
     cat << 'EOF' >> /etc/pacman.conf
 
 [multilib]
@@ -201,11 +201,21 @@ if [[ "$USE_SWAP" =~ ^[Yy]$ ]]; then
 fi
 
 echo ""
-echo "Which bootloader would you like to install?"
-echo "  1) Limine (Minimal, ultra-fast UEFI bootloader)"
-echo "  2) GRUB   (Standard Linux bootloader)"
-read -p "Choose bootloader (1 or 2) [default: 1]: " BOOTLOADER_CHOICE
-BOOTLOADER_CHOICE=${BOOTLOADER_CHOICE:-1}
+# New Bootloader Overwrite Option
+read -p "Do you want to install or overwrite the bootloader? (y/n) [default: y]: " INSTALL_BOOTLOADER
+INSTALL_BOOTLOADER=${INSTALL_BOOTLOADER:-y}
+
+BOOTLOADER_CHOICE=0
+if [[ "$INSTALL_BOOTLOADER" =~ ^[Yy]$ ]]; then
+    echo ""
+    echo "Which bootloader would you like to install?"
+    echo "  1) Limine (Minimal, ultra-fast UEFI bootloader)"
+    echo "  2) GRUB   (Standard Linux bootloader)"
+    read -p "Choose bootloader (1 or 2) [default: 1]: " BOOTLOADER_CHOICE
+    BOOTLOADER_CHOICE=${BOOTLOADER_CHOICE:-1}
+else
+    echo "[✓] Bootloader installation/overwrite skipped by user request."
+fi
 
 echo ""
 echo "--------------------------------------------------"
@@ -215,7 +225,7 @@ echo " Username      : $USERNAME"
 echo " Timezone      : $TIMEZONE"
 echo " Boot Partition: $BOOT_PART"
 echo " Root Partition: $ROOT_PART"
-echo " Bootloader    : $( [ "$BOOTLOADER_CHOICE" == "1" ] && echo "Limine" || echo "GRUB" )"
+echo " Bootloader    : $( [ "$BOOTLOADER_CHOICE" == "1" ] && echo "Limine" || ( [ "$BOOTLOADER_CHOICE" == "2" ] && echo "GRUB" || echo "Skipped / None" ) )"
 echo "--------------------------------------------------"
 echo ""
 read -p "Press Enter to start installation, or Ctrl+C to cancel..."
@@ -229,7 +239,7 @@ BASE_PKGS="base base-devel dinit elogind-dinit linux-cachyos linux-cachyos-heade
 
 if [ "$BOOTLOADER_CHOICE" == "1" ]; then
     BASE_PKGS="$BASE_PKGS limine"
-else
+elif [ "$BOOTLOADER_CHOICE" == "2" ]; then
     BASE_PKGS="$BASE_PKGS grub"
 fi
 
@@ -292,7 +302,7 @@ chroot_error() {
     echo ""
     echo "=================================================================="
     echo "  [!] CHROOT INSTALLATION ERROR DETECTED"
-    echo "  The chroot script broke at line $line_no with exit code$exit_code."
+    echo "  The chroot script broke at line $line_no with exit code $exit_code."
     echo "=================================================================="
     exit "$exit_code"
 }
@@ -367,14 +377,14 @@ cat << 'CONSOLECONF' > /etc/dinit.d/config/console.conf
 ACTIVE_CONSOLES=/dev/tty1 /dev/tty3 /dev/tty4 /dev/tty5 /dev/tty6
 CONSOLECONF
 
-# Bootloader Setup (Sharing ESP safely with Windows)
+# Conditional Bootloader Setup
 if [ "$BOOTLOADER_CHOICE" == "1" ]; then
+    echo "==> Installing and configuring Limine..."
     mkdir -p /boot/EFI/BOOT
     cp /usr/share/limine/BOOTX64.EFI /boot/EFI/BOOT/
 
-    ROOT_UUID=$(blkid -s UUID -o value$ROOT_PART)
+    ROOT_UUID=$(blkid -s UUID -o value $ROOT_PART)
     
-    # Configure Limine with Artix and an optional Windows entry (if Windows exists)
     cat << LIMINE > /boot/limine.conf
 timeout: no
 
@@ -385,7 +395,6 @@ timeout: no
     cmdline: root=UUID=$ROOT_UUID rw quiet
 LIMINE
 
-    # Add Windows chainload option if Windows bootmgfw.efi is present on the ESP
     if [ -f /boot/EFI/Microsoft/Boot/bootmgfw.efi ]; then
         cat << 'WINLIMINE' >> /boot/limine.conf
 
@@ -395,12 +404,16 @@ LIMINE
 WINLIMINE
     fi
 
-    DISK_DEV=$(echo "$BOOT_PART" \vert{} sed -E 's/p?[0-9]+$//')
-    PART_NUM=$(echo "$BOOT_PART" \vert{} grep -o '[0-9]*$')
+    DISK_DEV=$(echo "$BOOT_PART" | sed -E 's/p?[0-9]+$//')
+    PART_NUM=$(echo "$BOOT_PART" | grep -o '[0-9]*$')
     efibootmgr --create --disk "$DISK_DEV" --part "$PART_NUM" --label "Limine" --loader '\\EFI\\BOOT\\BOOTX64.EFI'
-else
+
+elif [ "$BOOTLOADER_CHOICE" == "2" ]; then
+    echo "==> Installing and configuring GRUB..."
     grub-install --target=x86_64-efi --efi-directory=/boot --bootloader-id=Artix --removable || grub-install --target=x86_64-efi --efi-directory=/boot --bootloader-id=Artix
     grub-mkconfig -o /boot/grub/grub.cfg
+else
+    echo "[✓] Skipping bootloader configuration as requested."
 fi
 
 echo "Chroot configuration complete!"
@@ -408,4 +421,23 @@ EOF
 
 # Inject variables into chroot script
 sed -i "s|__HOSTNAME__|$HOSTNAME|g" /mnt/root/chroot-setup.sh
-sed -i "s|__USERNAME__|$USERNAME|g" /
+sed -i "s|__USERNAME__|$USERNAME|g" /mnt/root/chroot-setup.sh
+sed -i "s|__TIMEZONE__|$TIMEZONE|g" /mnt/root/chroot-setup.sh
+sed -i "s|__ROOT_PART__|$ROOT_PART|g" /mnt/root/chroot-setup.sh
+sed -i "s|__BOOT_PART__|$BOOT_PART|g" /mnt/root/chroot-setup.sh
+sed -i "s|__BOOTLOADER_CHOICE__|$BOOTLOADER_CHOICE__|g" /mnt/root/chroot-setup.sh
+
+chmod +x /mnt/root/chroot-setup.sh
+
+echo "==> Executing chroot system deployment..."
+artix-chroot /mnt /root/chroot-setup.sh
+
+echo "[Step 6/6] Cleaning up and unmounting..."
+rm /mnt/root/chroot-setup.sh
+umount -R /mnt
+
+echo ""
+echo "================================================--"
+echo "      Installation Finished Successfully!         "
+echo "  You can now remove your USB and type 'reboot'.  "
+echo "================================================--"
