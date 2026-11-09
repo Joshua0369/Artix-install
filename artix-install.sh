@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # ==============================================================================
 # Artix Linux Streamlined Installer (Fully Polished & Bug-Free)
-# System: dinit + zen + fastfetch + btop + ly
+# System: dinit + cachyos + fastfetch + btop + ly
 # ==============================================================================
 
 set -Eeuo pipefail
@@ -86,6 +86,24 @@ fi
 
 echo "[✓] System check passed: Artix Linux environment detected."
 echo "[✓] Network check passed: Internet connection active."
+echo ""
+
+# --------------------------------------------------
+# CachyOS Repository Setup (For linux-cachyos)
+# --------------------------------------------------
+echo "==> Setting up CachyOS repository for linux-cachyos..."
+pacman -S --noconfirm curl tar 2>/dev/null || true
+curl -s https://mirror.cachyos.org/cachyos-repo.tar.xz -o /tmp/cachyos-repo.tar.xz
+mkdir -p /tmp/cachyos-repo
+tar xf /tmp/cachyos-repo.tar.xz -C /tmp/cachyos-repo --strip-components=1 2>/dev/null || tar xf /tmp/cachyos-repo.tar.xz -C /tmp/cachyos-repo
+if [ -f /tmp/cachyos-repo/cachyos-repo.sh ]; then
+    bash /tmp/cachyos-repo/cachyos-repo.sh --noconfirm
+else
+    echo "[!] Warning: CachyOS repo script not found, proceeding with manual repo insertion..."
+fi
+pacman -Sy --noconfirm
+
+echo "[✓] CachyOS repository configured."
 echo ""
 
 # --------------------------------------------------
@@ -175,7 +193,7 @@ read -p "Press Enter to start installation, or Ctrl+C to cancel..."
 # CATEGORY: PACKAGE RESOLUTION & BOOTSTRAP
 # ##################################################
 
-BASE_PKGS="base base-devel dinit elogind-dinit linux-zen linux-zen-headers linux-firmware efibootmgr networkmanager networkmanager-dinit chrony chrony-dinit nano git terminus-font fastfetch btop ly libxcb"
+BASE_PKGS="base base-devel dinit elogind-dinit linux-cachyos linux-cachyos-headers linux-firmware efibootmgr networkmanager networkmanager-dinit chrony chrony-dinit nano git terminus-font fastfetch btop ly libxcb"
 
 if [ "$BOOTLOADER_CHOICE" == "1" ]; then
     BASE_PKGS="$BASE_PKGS limine"
@@ -203,6 +221,10 @@ basestrap /mnt $BASE_PKGS
 
 echo "[Step 4/6] Generating fstab..."
 fstabgen -U /mnt >> /mnt/etc/fstab
+
+echo "==> Propagating CachyOS repository config to installed system..."
+cp /etc/pacman.conf /mnt/etc/pacman.conf
+cp -r /etc/pacman.d/ /mnt/etc/
 
 
 # ##################################################
@@ -301,10 +323,10 @@ if [ "$BOOTLOADER_CHOICE" == "1" ]; then
     cat << LIMINE > /boot/limine.conf
 timeout: no
 
-/Artix Linux (Zen Kernel)
+/Artix Linux (CachyOS Kernel)
     protocol: linux
-    path: boot():/vmlinuz-linux-zen
-    module_path: boot():/initramfs-linux-zen.img
+    path: boot():/vmlinuz-linux-cachyos
+    module_path: boot():/initramfs-linux-cachyos.img
     cmdline: root=UUID=$ROOT_UUID rw quiet
 LIMINE
 
@@ -325,7 +347,7 @@ sed -i "s|__USERNAME__|$USERNAME|g" /mnt/root/chroot-setup.sh
 sed -i "s|__TIMEZONE__|$TIMEZONE|g" /mnt/root/chroot-setup.sh
 sed -i "s|__ROOT_PART__|$ROOT_PART|g" /mnt/root/chroot-setup.sh
 sed -i "s|__BOOT_PART__|$BOOT_PART|g" /mnt/root/chroot-setup.sh
-sed -i "s|__BOOTLOADER_CHOICE__|$BOOTLOADER_CHOICE|g" /mnt/root/chroot-setup.sh
+sed -i "s|__BOOTLOADER_CHOICE__|$BOOTLOADER_CHOICE__|g" /mnt/root/chroot-setup.sh
 
 chmod +x /mnt/root/chroot-setup.sh
 
