@@ -2,7 +2,7 @@
 # ==============================================================================
 # Artix Linux Streamlined Installer (Fully Polished & Bug-Free)
 # System: dinit + cachyos + fastfetch + btop + ly
-# Feature: Shared Windows/Linux ESP (Non-destructive EFI handling)
+# Feature: Shared Windows/Linux ESP (Non-destructive EFI handling - NO FORMATTING)
 # ==============================================================================
 
 set -Eeuo pipefail
@@ -197,7 +197,7 @@ echo " SUMMARY:"
 echo " Hostname      : $HOSTNAME"
 echo " Username      : $USERNAME"
 echo " Timezone      : $TIMEZONE"
-echo " Boot Partition: $BOOT_PART"
+echo " Boot Partition: $BOOT_PART (Preserved / Unformatted)"
 echo " Root Partition: $ROOT_PART"
 echo " Bootloader    : $( [ "$BOOTLOADER_CHOICE" == "1" ] && echo "Limine" || echo "GRUB" )"
 echo "--------------------------------------------------"
@@ -218,7 +218,7 @@ else
 fi
 
 echo ""
-echo "[Step 1/6] Preparing partitions (Safe non-destructive EFI check)..."
+echo "[Step 1/6] Preparing root partition (leaving EFI partition unformatted)..."
 mkfs.ext4 -F "$ROOT_PART"
 
 if [[ "$USE_SWAP" =~ ^[Yy]$ ]]; then
@@ -226,24 +226,7 @@ if [[ "$USE_SWAP" =~ ^[Yy]$ ]]; then
     swapon "$SWAP_PART"
 fi
 
-# Check if BOOT_PART already contains Windows/EFI files to avoid formatting
-mkdir -p /tmp/efi_check_mnt
-if mount "$BOOT_PART" /tmp/efi_check_mnt 2>/dev/null; then
-    if [ -d /tmp/efi_check_mnt/EFI/Microsoft ]; then
-        echo "[✓] Windows bootloader detected on $BOOT_PART!"
-        echo "[✓] Skipping partition format to preserve existing Windows files and share the ESP."
-    else
-        echo "==> No Windows bootloader detected. Formatting $BOOT_PART as FAT32..."
-        mkfs.vfat -F 32 "$BOOT_PART"
-    fi
-    umount /tmp/efi_check_mnt 2>/dev/null || true
-else
-    echo "==> Formatting $BOOT_PART as FAT32..."
-    mkfs.vfat -F 32 "$BOOT_PART"
-fi
-rmdir /tmp/efi_check_mnt
-
-echo "[Step 2/6] Mounting partitions..."
+echo "[Step 2/6] Loading kernel modules and mounting partitions..."
 modprobe fat 2>/dev/null || true
 modprobe vfat 2>/dev/null || true
 
