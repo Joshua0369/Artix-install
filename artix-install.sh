@@ -2,6 +2,7 @@
 # ==============================================================================
 # Artix Linux Streamlined Installer (Fully Polished & Bug-Free)
 # System: dinit + cachyos + fastfetch + btop + ly
+# Feature: Shared Windows/Linux ESP (Non-destructive EFI handling)
 # ==============================================================================
 
 set -Eeuo pipefail
@@ -202,14 +203,31 @@ else
 fi
 
 echo ""
-echo "[Step 1/6] Formatting partitions..."
-mkfs.vfat -F 32 "$BOOT_PART"
+echo "[Step 1/6] Preparing partitions (Safe non-destructive EFI check)..."
 mkfs.ext4 -F "$ROOT_PART"
 
 if [[ "$USE_SWAP" =~ ^[Yy]$ ]]; then
     mkswap "$SWAP_PART"
     swapon "$SWAP_PART"
 fi
+
+# Check if BOOT_PART already contains Windows/EFI files to avoid formatting
+mkdir -p /tmp/efi_check_mnt
+if mount "$BOOT_PART" /tmp/efi_check_mnt 2>/dev/null; then
+    if [ -d /tmp/efi_check_mnt/EFI/Microsoft ]; then
+        echo "[✓] Windows bootloader detected on $BOOT_PART!"
+        echo "[✓] Skipping partition format to preserve existing Windows files and share the ESP."
+    else
+        echo "==> No Windows bootloader detected. Formatting $BOOT_PART as FAT32..."
+        umount /tmp/efi_check_mnt
+        mkfs.vfat -F 32 "$BOOT_PART"
+    fi
+    umount /tmp/efi_check_mnt 2>/dev/null || true
+else
+    echo "==> Formatting $BOOT_PART as FAT32..."
+    mkfs.vfat -F 32 "$BOOT_PART"
+fi
+rmdir /tmp/efi_check_mnt
 
 echo "[Step 2/6] Mounting partitions..."
 mount "$ROOT_PART" /mnt
@@ -314,12 +332,14 @@ cat << 'CONSOLECONF' > /etc/dinit.d/config/console.conf
 ACTIVE_CONSOLES=/dev/tty1 /dev/tty3 /dev/tty4 /dev/tty5 /dev/tty6
 CONSOLECONF
 
-# Bootloader Setup
+# Bootloader Setup (Sharing ESP safely with Windows)
 if [ "$BOOTLOADER_CHOICE" == "1" ]; then
     mkdir -p /boot/EFI/BOOT
     cp /usr/share/limine/BOOTX64.EFI /boot/EFI/BOOT/
 
     ROOT_UUID=$(blkid -s UUID -o value $ROOT_PART)
+    
+    # Configure Limine with Artix and an optional Windows entry (if Windows exists)
     cat << LIMINE > /boot/limine.conf
 timeout: no
 
@@ -330,11 +350,21 @@ timeout: no
     cmdline: root=UUID=$ROOT_UUID rw quiet
 LIMINE
 
+    # Add Windows chainload option if Windows bootmgfw.efi is present on the ESP
+    if [ -f /boot/EFI/Microsoft/Boot/bootmgfw.efi ]; then
+        cat << 'WINLIMINE' >> /boot/limine.conf
+
+/Windows
+    protocol: efi_chainload
+    path: boot():/EFI/Microsoft/Boot/bootmgfw.efi
+WINLIMINE
+    fi
+
     DISK_DEV=$(echo "$BOOT_PART" | sed -E 's/p?[0-9]+$//')
     PART_NUM=$(echo "$BOOT_PART" | grep -o '[0-9]*$')
     efibootmgr --create --disk "$DISK_DEV" --part "$PART_NUM" --label "Limine" --loader '\\EFI\\BOOT\\BOOTX64.EFI'
 else
-    grub-install --target=x86_64-efi --efi-directory=/boot --bootloader-id=GRUB
+    grub-install --target=x86_64-efi --efi-directory=/boot --bootloader-id=Artix --removable || grub-install --target=x86_64-efi --efi-directory=/boot --bootloader-id=Artix
     grub-mkconfig -o /boot/grub/grub.cfg
 fi
 
