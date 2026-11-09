@@ -90,6 +90,15 @@ echo "[✓] Network check passed: Internet connection active."
 echo ""
 
 # --------------------------------------------------
+# Ensure Live Environment Kernel Modules & Tools are Present
+# --------------------------------------------------
+echo "==> Ensuring live environment has kernel modules and dosfstools..."
+pacman -Sy --noconfirm linux dosfstools kmod 2>/dev/null || true
+depmod -a 2>/dev/null || true
+modprobe fat 2>/dev/null || true
+modprobe vfat 2>/dev/null || true
+
+# --------------------------------------------------
 # CachyOS Repository Setup (For linux-cachyos)
 # --------------------------------------------------
 echo "==> Setting up CachyOS repository for linux-cachyos..."
@@ -200,7 +209,7 @@ read -p "Press Enter to start installation, or Ctrl+C to cancel..."
 # CATEGORY: PACKAGE RESOLUTION & BOOTSTRAP
 # ##################################################
 
-BASE_PKGS="base base-devel dinit elogind-dinit linux-cachyos linux-cachyos-headers linux-firmware efibootmgr networkmanager networkmanager-dinit chrony chrony-dinit nano git terminus-font fastfetch btop ly libxcb"
+BASE_PKGS="base base-devel dinit elogind-dinit linux-cachyos linux-cachyos-headers linux-firmware efibootmgr networkmanager networkmanager-dinit chrony chrony-dinit nano git terminus-font fastfetch btop ly libxcb dosfstools"
 
 if [ "$BOOTLOADER_CHOICE" == "1" ]; then
     BASE_PKGS="$BASE_PKGS limine"
@@ -234,8 +243,8 @@ else
 fi
 rmdir /tmp/efi_check_mnt
 
-echo "[Step 2/6] Loading fat and vfat kernel modules and mounting partitions..."
-modprobe fat  2>/dev/null || true
+echo "[Step 2/6] Mounting partitions..."
+modprobe fat 2>/dev/null || true
 modprobe vfat 2>/dev/null || true
 
 mount "$ROOT_PART" /mnt
