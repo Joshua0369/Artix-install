@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # ==============================================================================
 # Artix Linux Streamlined Installer (Fully Polished & Bug-Free)
-# System: dinit + cachyos + extra + multilib + paru-bin + fastfetch + btop + ly
-# Feature: Shared Windows/Linux ESP with optional bootloader overwrite prompt
+# System: dinit + cachyos + fastfetch + btop + ly
+# Feature: Shared Windows/Linux ESP (Non-destructive EFI handling)
 # ==============================================================================
 
 set -Eeuo pipefail
@@ -90,40 +90,8 @@ echo "[✓] Network check passed: Internet connection active."
 echo ""
 
 # --------------------------------------------------
-# Repository Setup (Extra, Multilib, CachyOS - Total Universe Purge)
+# CachyOS Repository Setup (For linux-cachyos)
 # --------------------------------------------------
-echo "==> Completely purging Universe repository references..."
-sed -i '/\[universe\]/,+2d' /etc/pacman.conf 2>/dev/null || true
-sed -i '/universe/d' /etc/pacman.conf 2>/dev/null || true
-rm -f /etc/pacman.d/*universe* 2>/dev/null || true
-
-echo "==> Initializing pacman keys..."
-pacman-key --init
-pacman-key --populate artix
-
-echo "==> Installing artix-archlinux-support for Extra & Multilib..."
-pacman -Sy --noconfirm
-pacman -S --noconfirm artix-archlinux-support
-pacman-key --populate archlinux
-
-if ! grep -q "\[extra\]" /etc/pacman.conf; then
-    cat << 'EOF' >> /etc/pacman.conf
-
-[extra]
-Include = /etc/pacman.d/mirrorlist-arch
-EOF
-fi
-
-if ! grep -q "\[multilib\]" /etc/pacman.conf; then
-    cat << 'EOF' >> /etc/pacman.conf
-
-[multilib]
-Include = /etc/pacman.d/mirrorlist-arch
-EOF
-fi
-
-pacman -Sy --noconfirm
-
 echo "==> Setting up CachyOS repository for linux-cachyos..."
 pacman -S --noconfirm curl tar 2>/dev/null || true
 curl -s https://mirror.cachyos.org/cachyos-repo.tar.xz -o /tmp/cachyos-repo.tar.xz
@@ -136,7 +104,7 @@ else
 fi
 pacman -Sy --noconfirm
 
-echo "[✓] Repositories configured successfully."
+echo "[✓] CachyOS repository configured."
 echo ""
 
 # --------------------------------------------------
@@ -202,20 +170,11 @@ if [[ "$USE_SWAP" =~ ^[Yy]$ ]]; then
 fi
 
 echo ""
-read -p "Do you want to install or overwrite the bootloader? (y/n) [default: y]: " INSTALL_BOOTLOADER
-INSTALL_BOOTLOADER=${INSTALL_BOOTLOADER:-y}
-
-BOOTLOADER_CHOICE=0
-if [[ "$INSTALL_BOOTLOADER" =~ ^[Yy]$ ]]; then
-    echo ""
-    echo "Which bootloader would you like to install?"
-    echo "  1) Limine (Minimal, ultra-fast UEFI bootloader)"
-    echo "  2) GRUB   (Standard Linux bootloader)"
-    read -p "Choose bootloader (1 or 2) [default: 1]: " BOOTLOADER_CHOICE
-    BOOTLOADER_CHOICE=${BOOTLOADER_CHOICE:-1}
-else
-    echo "[✓] Bootloader installation/overwrite skipped by user request."
-fi
+echo "Which bootloader would you like to install?"
+echo "  1) Limine (Minimal, ultra-fast UEFI bootloader)"
+echo "  2) GRUB   (Standard Linux bootloader)"
+read -p "Choose bootloader (1 or 2) [default: 1]: " BOOTLOADER_CHOICE
+BOOTLOADER_CHOICE=${BOOTLOADER_CHOICE:-1}
 
 echo ""
 echo "--------------------------------------------------"
@@ -225,7 +184,7 @@ echo " Username      : $USERNAME"
 echo " Timezone      : $TIMEZONE"
 echo " Boot Partition: $BOOT_PART"
 echo " Root Partition: $ROOT_PART"
-echo " Bootloader    : $( [ "$BOOTLOADER_CHOICE" == "1" ] && echo "Limine" || ( [ "$BOOTLOADER_CHOICE" == "2" ] && echo "GRUB" || echo "Skipped / None" ) )"
+echo " Bootloader    : $( [ "$BOOTLOADER_CHOICE" == "1" ] && echo "Limine" || echo "GRUB" )"
 echo "--------------------------------------------------"
 echo ""
 read -p "Press Enter to start installation, or Ctrl+C to cancel..."
@@ -239,7 +198,7 @@ BASE_PKGS="base base-devel dinit elogind-dinit linux-cachyos linux-cachyos-heade
 
 if [ "$BOOTLOADER_CHOICE" == "1" ]; then
     BASE_PKGS="$BASE_PKGS limine"
-elif [ "$BOOTLOADER_CHOICE" == "2" ]; then
+else
     BASE_PKGS="$BASE_PKGS grub"
 fi
 
@@ -280,7 +239,7 @@ basestrap /mnt $BASE_PKGS
 echo "[Step 4/6] Generating fstab..."
 fstabgen -U /mnt >> /mnt/etc/fstab
 
-echo "==> Propagating repository config to installed system..."
+echo "==> Propagating CachyOS repository config to installed system..."
 cp /etc/pacman.conf /mnt/etc/pacman.conf
 cp -r /etc/pacman.d/ /mnt/etc/
 
@@ -347,16 +306,12 @@ chmod 440 /etc/sudoers.d/wheel
 echo "$USERNAME ALL=(ALL) NOPASSWD: /usr/bin/reboot, /usr/bin/poweroff, /usr/sbin/reboot, /usr/sbin/poweroff" > /etc/sudoers.d/reboot
 chmod 440 /etc/sudoers.d/reboot
 
-# Install Paru (AUR helper) via paru-bin as the regular user safely in home dir
-echo "==> Installing paru-bin (AUR helper)..."
-su - $USERNAME -c "git clone https://aur.archlinux.org/paru-bin.git ~/paru-bin && cd ~/paru-bin && makepkg -si --noconfirm && rm -rf ~/paru-bin"
-
 # Dinit Services (Offline boot symlinks)
 mkdir -p /etc/dinit.d/boot.d
 ln -sf /etc/dinit.d/chronyd /etc/dinit.d/boot.d/
 ln -sf /etc/dinit.d/NetworkManager /etc/dinit.d/boot.d/
 
-# Create Ly Dinit Service Definition File (Correct binary path)
+# Create Ly Dinit Service Definition File (Corrected binary path)
 cat << 'LYSERVICE' > /etc/dinit.d/ly
 type = process
 restart = true
@@ -376,14 +331,14 @@ cat << 'CONSOLECONF' > /etc/dinit.d/config/console.conf
 ACTIVE_CONSOLES=/dev/tty1 /dev/tty3 /dev/tty4 /dev/tty5 /dev/tty6
 CONSOLECONF
 
-# Conditional Bootloader Setup
+# Bootloader Setup (Sharing ESP safely with Windows)
 if [ "$BOOTLOADER_CHOICE" == "1" ]; then
-    echo "==> Installing and configuring Limine..."
     mkdir -p /boot/EFI/BOOT
     cp /usr/share/limine/BOOTX64.EFI /boot/EFI/BOOT/
 
     ROOT_UUID=$(blkid -s UUID -o value $ROOT_PART)
     
+    # Configure Limine with Artix and an optional Windows entry (if Windows exists)
     cat << LIMINE > /boot/limine.conf
 timeout: no
 
@@ -394,6 +349,7 @@ timeout: no
     cmdline: root=UUID=$ROOT_UUID rw quiet
 LIMINE
 
+    # Add Windows chainload option if Windows bootmgfw.efi is present on the ESP
     if [ -f /boot/EFI/Microsoft/Boot/bootmgfw.efi ]; then
         cat << 'WINLIMINE' >> /boot/limine.conf
 
@@ -406,13 +362,9 @@ WINLIMINE
     DISK_DEV=$(echo "$BOOT_PART" | sed -E 's/p?[0-9]+$//')
     PART_NUM=$(echo "$BOOT_PART" | grep -o '[0-9]*$')
     efibootmgr --create --disk "$DISK_DEV" --part "$PART_NUM" --label "Limine" --loader '\\EFI\\BOOT\\BOOTX64.EFI'
-
-elif [ "$BOOTLOADER_CHOICE" == "2" ]; then
-    echo "==> Installing and configuring GRUB..."
+else
     grub-install --target=x86_64-efi --efi-directory=/boot --bootloader-id=Artix --removable || grub-install --target=x86_64-efi --efi-directory=/boot --bootloader-id=Artix
     grub-mkconfig -o /boot/grub/grub.cfg
-else
-    echo "[✓] Skipping bootloader configuration as requested."
 fi
 
 echo "Chroot configuration complete!"
