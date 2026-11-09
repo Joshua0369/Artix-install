@@ -234,9 +234,9 @@ else
 fi
 rmdir /tmp/efi_check_mnt
 
-echo "[Step 2/6] Loading vfat module and mounting partitions..."
-modprobe vfat 2>/dev/null || true
+echo "[Step 2/6] Loading fat and vfat kernel modules and mounting partitions..."
 modprobe fat  2>/dev/null || true
+modprobe vfat 2>/dev/null || true
 
 mount "$ROOT_PART" /mnt
 mkdir -p /mnt/boot
