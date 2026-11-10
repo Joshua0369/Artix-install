@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # ==============================================================================
-# Artix Linux Streamlined Installer (Max Performance / Dual-Boot Safe)
+# Artix Linux Streamlined Installer (ASUS Optimized / Dual-Boot Safe)
 # System: dinit + linux-cachyos + fastfetch + btop + ly
 # Default hostname: 60
 # ==============================================================================
@@ -144,7 +144,7 @@ echo " Username      : $USERNAME"
 echo " Timezone      : $TIMEZONE"
 echo " Boot Partition: $BOOT_PART ($BOOT_FS) - Format: $FORMAT_BOOT"
 echo " Root Partition: $ROOT_PART ($ROOT_FS) - Format: $FORMAT_ROOT"
-echo " Kernel        : linux-cachyos (AUR)"
+echo " Kernel        : linux-cachyos (AUR - Optimized Build)"
 echo " Bootloader    : $( [ "$BOOTLOADER_CHOICE" == "1" ] && echo "Limine" || echo "GRUB" )"
 echo "--------------------------------------------------"
 echo ""
@@ -231,17 +231,21 @@ useradd -m -G wheel -s /bin/bash builder 2>/dev/null || true
 echo "builder ALL=(ALL) NOPASSWD: ALL" > /etc/sudoers.d/builder
 chmod 440 /etc/sudoers.d/builder
 
-echo "==> Installing kernel build dependencies..."
-pacman -S --noconfirm --needed base-devel bc pahole rust rust-bindgen rust-src clang llvm lld inetutils gnupg
+echo "==> Installing kernel build dependencies and ccache..."
+pacman -S --noconfirm --needed base-devel bc pahole rust rust-bindgen rust-src clang llvm lld inetutils gnupg ccache
 
-echo "==> Cloning and compiling linux-cachyos (Using max CPU cores)..."
+# Enable ccache so if the laptop crashes, it resumes faster next time
+sed -i 's/^BUILDENV=.*/BUILDENV=(!distcc color ccache check !sign)/' /etc/makepkg.conf
+
+echo "==> Cloning and compiling linux-cachyos (Optimized, using max CPU cores)..."
 su - builder -c '
 set -Eeuo pipefail
 cd ~
 git clone https://aur.archlinux.org/linux-cachyos.git
 cd linux-cachyos
 sed -i "s/pahole=[0-9:.-]*/pahole/g" PKGBUILD
-# Compilation will now use ALL available CPU cores and RAM
+# Disable LTO to prevent sudden hardware shutdowns and drastically speed up compiling
+sed -i "s/^_use_llvm_lto=.*/_use_llvm_lto=none/" PKGBUILD
 makepkg -si --noconfirm --nodeps --skippgpcheck
 '
 
@@ -303,7 +307,6 @@ LIMINE
     PART_NUM=$(echo "$BOOT_PART" | grep -o '[0-9]*$')
     efibootmgr --create --disk "$DISK_DEV" --part "$PART_NUM" --label "Limine" --loader '\\EFI\\BOOT\\BOOTX64.EFI'
 else
-    # Enable os-prober to detect Windows
     echo "GRUB_DISABLE_OS_PROBER=false" >> /etc/default/grub
     grub-install --target=x86_64-efi --efi-directory=/boot --bootloader-id=GRUB
     grub-mkconfig -o /boot/grub/grub.cfg
