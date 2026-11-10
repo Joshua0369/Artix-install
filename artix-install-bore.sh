@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # ==============================================================================
-# Artix Linux Streamlined Installer (CachyOS BORE / User Choice)
+# Artix Linux Streamlined Installer (CachyOS BORE / Fixed Manual Mode)
 # System: dinit + linux-cachyos-bore + fastfetch + btop + ly
 # Default hostname: 60
 # ==============================================================================
@@ -265,14 +265,16 @@ sed -i 's/pahole=[0-9:.-]*/pahole/g' PKGBUILD
 # Disable LTO to prevent sudden hardware shutdowns and drastically speed up compiling
 sed -i 's/^_use_llvm_lto=.*/_use_llvm_lto=none/' PKGBUILD
 
-rm -f config.x86_64 config
-
 if [ \"$KERNEL_MODE\" == \"manual\" ]; then
-    echo '==> Manual mode selected: Opening menuconfig...'
+    echo '==> Manual mode selected: Generating default config and opening menuconfig...'
+    # Generate the default config first so makepkg doesn't fail, then open the menu
+    make defconfig
+    make menuconfig
     makepkg -si --noconfirm --nodeps --skippgpcheck
 else
     echo '==> Automatic mode selected: Using safe defaults...'
-    echo -e '\n\n\n\n\n\n\n\n\n\n' | makepkg -si --noconfirm --nodeps --skippgpcheck
+    # Pipe \"yes\" to accept all defaults automatically
+    yes \"\" | makepkg -si --noconfirm --nodeps --skippgpcheck
 fi
 "
 
