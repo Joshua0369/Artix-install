@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # ==============================================================================
-# Artix Linux Streamlined Installer (Fully Reworked)
+# Artix Linux Streamlined Installer (Fully Reworked v3)
 # System: dinit + linux-cachyos + fastfetch + btop + ly
 # Default hostname: 60
 # ==============================================================================
@@ -152,7 +152,6 @@ read -r -p "Press Enter to start installation, or Ctrl+C to cancel..."
 # CATEGORY: PACKAGE RESOLUTION & BOOTSTRAP
 # ##################################################
 
-# Core packages needed before entering chroot
 BASE_PKGS="base base-devel dinit elogind-dinit linux-firmware efibootmgr networkmanager networkmanager-dinit chrony chrony-dinit nano git terminus-font fastfetch btop ly libxcb"
 
 if [ "$BOOTLOADER_CHOICE" == "1" ]; then
@@ -235,8 +234,7 @@ useradd -m -G wheel -s /bin/bash builder 2>/dev/null || true
 echo "builder ALL=(ALL) NOPASSWD: ALL" > /etc/sudoers.d/builder
 chmod 440 /etc/sudoers.d/builder
 
-echo "==> Installing kernel build dependencies to prevent failure..."
-# Installing explicit build dependencies required by the CachyOS PKGBUILD
+echo "==> Installing kernel build dependencies..."
 pacman -S --noconfirm --needed base-devel bc pahole rust rust-bindgen rust-src clang llvm lld inetutils
 
 echo "==> Cloning and compiling linux-cachyos (This will take a while)..."
@@ -245,7 +243,12 @@ set -Eeuo pipefail
 cd ~
 git clone https://aur.archlinux.org/linux-cachyos.git
 cd linux-cachyos
-makepkg -si --noconfirm
+
+# PATCH: Remove strict version requirement for pahole to fix Artix repo mismatch
+sed -i "s/pahole=[0-9:.-]*/pahole/g" PKGBUILD
+
+# Build and install, bypassing the dependency check just in case
+makepkg -si --noconfirm --nodeps
 '
 
 userdel -r builder 2>/dev/null || true
@@ -275,7 +278,7 @@ mkdir -p /etc/dinit.d/boot.d
 ln -sf /etc/dinit.d/chronyd /etc/dinit.d/boot.d/
 ln -sf /etc/dinit.d/NetworkManager /etc/dinit.d/boot.d/
 
-# Create Ly Dinit Service (Ensuring console lock is handled correctly)
+# Create Ly Dinit Service
 cat << 'LYSERVICE' > /etc/dinit.d/ly
 type = process
 command = /usr/bin/ly-dm
@@ -288,7 +291,7 @@ LYSERVICE
 
 ln -sf /etc/dinit.d/ly /etc/dinit.d/boot.d/
 
-# Ly TTY console config (Freeing tty2 for Ly to use)
+# Ly TTY console config
 mkdir -p /etc/dinit.d/config
 cat << 'CONSOLECONF' > /etc/dinit.d/config/console.conf
 ACTIVE_CONSOLES=/dev/tty1 /dev/tty3 /dev/tty4 /dev/tty5 /dev/tty6
