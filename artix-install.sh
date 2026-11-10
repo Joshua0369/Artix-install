@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # ==============================================================================
-# Artix Linux Streamlined Installer (Reworked)
+# Artix Linux Streamlined Installer (Fully Reworked)
 # System: dinit + linux-cachyos + fastfetch + btop + ly
 # Default hostname: 60
 # ==============================================================================
@@ -36,9 +36,6 @@ echo "    Artix Linux Streamlined Installer             "
 echo "=================================================="
 echo ""
 
-# --------------------------------------------------
-# Font Selection Option (Live USB Terminal + Download)
-# --------------------------------------------------
 read -r -p "Do you want to download and set the console font to ter-v14b? (y/n) [default: y]: " SET_FONT
 SET_FONT=${SET_FONT:-y}
 if [[ "$SET_FONT" =~ ^[Yy]$ ]]; then
@@ -50,9 +47,7 @@ echo ""
 
 echo "==> Running pre-installation checks..."
 
-# --------------------------------------------------
 # Check 1: Artix OS Environment Check
-# --------------------------------------------------
 if [ -f /etc/os-release ]; then source /etc/os-release; fi
 
 if [[ "${ID:-}" != "artix" && "${ID_LIKE:-}" != *"artix"* ]]; then
@@ -63,25 +58,16 @@ if [[ "${ID:-}" != "artix" && "${ID_LIKE:-}" != *"artix"* ]]; then
     echo "  Current system detected: ${NAME:-Unknown OS}"
     echo "  Aborting execution to prevent system damage."
     echo "=================================================================="
-    echo "See you next time..."
-    echo ""
     exit 1
 fi
 
-# --------------------------------------------------
 # Check 2: Active Internet / Network Connection Check
-# --------------------------------------------------
 if ! ping -c 1 -W 3 1.1.1.1 >/dev/null 2>&1 && ! ping -c 1 -W 3 archlinux.org >/dev/null 2>&1; then
     echo ""
     echo "=================================================================="
     echo "  [!] ERROR: NO ACTIVE INTERNET CONNECTION"
     echo "  An active network connection is required to download packages."
-    echo "  Please plug in an Ethernet cable or connect via Wi-Fi using:"
-    echo "    - nmtui / nmcli (if running NetworkManager)"
-    echo "  Then re-run this script."
     echo "=================================================================="
-    echo "See you next time..."
-    echo ""
     exit 1
 fi
 
@@ -89,20 +75,9 @@ echo "[✓] System check passed: Artix Linux environment detected."
 echo "[✓] Network check passed: Internet connection active."
 echo ""
 
-# --------------------------------------------------
-# Welcome Sequence & Confirmation Gate
-# --------------------------------------------------
-echo "Hi, welcome to this installation script of Artix."
-sleep 2
-echo "(gemini made this cleanly for you.)"
-echo ""
-
 read -r -p "Would you like to continue with the installation? Type 'execute' for yes and 'n' for no: " CONTINUE_CHOICE
 if [[ "$CONTINUE_CHOICE" != "execute" ]]; then
-    echo ""
     echo "Installation aborted by user request."
-    echo "See you next time..."
-    echo ""
     exit 0
 fi
 echo ""
@@ -143,7 +118,7 @@ read -r -p "Enter your ROOT partition (e.g. nvme0n1p5, sda2): " ROOT_PART
 [[ "$ROOT_PART" != /dev/* ]] && ROOT_PART="/dev/$ROOT_PART"
 
 echo ""
-read -r -p "Do you want to use a Swap partition or nah? (y/n) [default: n]: " USE_SWAP
+read -r -p "Do you want to use a Swap partition? (y/n) [default: n]: " USE_SWAP
 USE_SWAP=${USE_SWAP:-n}
 
 if [[ "$USE_SWAP" =~ ^[Yy]$ ]]; then
@@ -177,10 +152,7 @@ read -r -p "Press Enter to start installation, or Ctrl+C to cancel..."
 # CATEGORY: PACKAGE RESOLUTION & BOOTSTRAP
 # ##################################################
 
-# NOTE: linux-cachyos and linux-cachyos-headers are NOT included here because
-# basestrap cannot install AUR packages. They are built and installed inside
-# the chroot after the base system is ready.
-
+# Core packages needed before entering chroot
 BASE_PKGS="base base-devel dinit elogind-dinit linux-firmware efibootmgr networkmanager networkmanager-dinit chrony chrony-dinit nano git terminus-font fastfetch btop ly libxcb"
 
 if [ "$BOOTLOADER_CHOICE" == "1" ]; then
@@ -256,15 +228,18 @@ cat << HOSTS > /etc/hosts
 HOSTS
 
 # --------------------------------------------------
-# Install linux-cachyos from AUR
+# Install linux-cachyos from AUR (with fixed dependencies)
 # --------------------------------------------------
-echo "==> Building and installing linux-cachyos from AUR..."
-# Ensure we have a non-root user for makepkg (makepkg refuses to run as root)
+echo "==> Preparing to build linux-cachyos from AUR..."
 useradd -m -G wheel -s /bin/bash builder 2>/dev/null || true
 echo "builder ALL=(ALL) NOPASSWD: ALL" > /etc/sudoers.d/builder
 chmod 440 /etc/sudoers.d/builder
 
-# Clone and build in the builder's home
+echo "==> Installing kernel build dependencies to prevent failure..."
+# Installing explicit build dependencies required by the CachyOS PKGBUILD
+pacman -S --noconfirm --needed base-devel bc pahole rust rust-bindgen rust-src clang llvm lld inetutils
+
+echo "==> Cloning and compiling linux-cachyos (This will take a while)..."
 su - builder -c '
 set -Eeuo pipefail
 cd ~
@@ -273,7 +248,6 @@ cd linux-cachyos
 makepkg -si --noconfirm
 '
 
-# Remove the temporary builder user after install
 userdel -r builder 2>/dev/null || true
 rm -f /etc/sudoers.d/builder
 
@@ -286,7 +260,6 @@ useradd -m -G wheel -s /bin/bash $USERNAME
 echo "-> Set password for user '$USERNAME':"
 passwd $USERNAME
 
-# Fix home permissions immediately
 chown -R $USERNAME:$USERNAME /home/$USERNAME
 
 # Sudoers rules
@@ -297,26 +270,25 @@ chmod 440 /etc/sudoers.d/wheel
 echo "$USERNAME ALL=(ALL) NOPASSWD: /usr/bin/reboot, /usr/bin/poweroff, /usr/sbin/reboot, /usr/sbin/poweroff" > /etc/sudoers.d/reboot
 chmod 440 /etc/sudoers.d/reboot
 
-# Dinit Services (Offline boot symlinks)
+# Dinit Services
 mkdir -p /etc/dinit.d/boot.d
 ln -sf /etc/dinit.d/chronyd /etc/dinit.d/boot.d/
 ln -sf /etc/dinit.d/NetworkManager /etc/dinit.d/boot.d/
 
-# Create Ly Dinit Service Definition File
+# Create Ly Dinit Service (Ensuring console lock is handled correctly)
 cat << 'LYSERVICE' > /etc/dinit.d/ly
 type = process
-restart = true
-smooth-recovery = true
 command = /usr/bin/ly-dm
 depends-on = login.target
+restart = true
+smooth-recovery = true
 term-signal = HUP
 options = shares-console
 LYSERVICE
 
-# Enable Ly in dinit boot.d
 ln -sf /etc/dinit.d/ly /etc/dinit.d/boot.d/
 
-# Ly TTY console config
+# Ly TTY console config (Freeing tty2 for Ly to use)
 mkdir -p /etc/dinit.d/config
 cat << 'CONSOLECONF' > /etc/dinit.d/config/console.conf
 ACTIVE_CONSOLES=/dev/tty1 /dev/tty3 /dev/tty4 /dev/tty5 /dev/tty6
@@ -349,7 +321,7 @@ fi
 echo "Chroot configuration complete!"
 EOF
 
-# Inject variables into chroot script
+# Inject variables
 sed -i "s|__HOSTNAME__|$HOSTNAME|g" /mnt/root/chroot-setup.sh
 sed -i "s|__USERNAME__|$USERNAME|g" /mnt/root/chroot-setup.sh
 sed -i "s|__TIMEZONE__|$TIMEZONE|g" /mnt/root/chroot-setup.sh
@@ -359,7 +331,7 @@ sed -i "s|__BOOTLOADER_CHOICE__|$BOOTLOADER_CHOICE|g" /mnt/root/chroot-setup.sh
 
 chmod +x /mnt/root/chroot-setup.sh
 
-echo "[Step 6/7] Executing chroot system deployment (building CachyOS kernel)..."
+echo "[Step 6/7] Executing chroot system deployment (Building CachyOS kernel. THIS TAKES TIME)..."
 artix-chroot /mnt /root/chroot-setup.sh
 
 echo "[Step 7/7] Cleaning up and unmounting..."
