@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # ==============================================================================
-# Artix Linux Streamlined Installer (Fully Reworked v4)
+# Artix Linux Streamlined Installer (Max Performance / Dual-Boot Safe)
 # System: dinit + linux-cachyos + fastfetch + btop + ly
 # Default hostname: 60
 # ==============================================================================
@@ -24,7 +24,7 @@ cleanup_on_error() {
 trap 'cleanup_on_error $LINENO' ERR
 
 echo "=================================================="
-echo "    Artix Linux Streamlined Installer             "
+echo "    Artix Linux Streamlined Installer (Dual-Boot) "
 echo "=================================================="
 echo ""
 
@@ -96,7 +96,7 @@ if [[ ! "$PARTITIONS_READY" =~ ^[Yy]$ ]]; then
     exit 1
 fi
 
-read -r -p "Enter your BOOT/EFI partition (e.g. nvme0n1p4, sda1): " BOOT_PART
+read -r -p "Enter your BOOT/EFI partition (e.g. nvme0n1p1, sda1): " BOOT_PART
 read -r -p "Enter your ROOT partition (e.g. nvme0n1p5, sda2): " ROOT_PART
 
 [[ "$BOOT_PART" != /dev/* ]] && BOOT_PART="/dev/$BOOT_PART"
@@ -114,9 +114,27 @@ fi
 echo ""
 echo "Which bootloader would you like to install?"
 echo "  1) Limine (Minimal, ultra-fast UEFI bootloader)"
-echo "  2) GRUB   (Standard Linux bootloader)"
+echo "  2) GRUB   (Standard Linux bootloader - RECOMMENDED FOR WINDOWS DUAL-BOOT)"
 read -r -p "Choose bootloader (1 or 2) [default: 1]: " BOOTLOADER_CHOICE
 BOOTLOADER_CHOICE=${BOOTLOADER_CHOICE:-1}
+
+# --- NEW FORMATTING PROMPTS ---
+echo ""
+echo "--------------------------------------------------"
+echo " Formatting Options (Dual-Boot Safe)"
+echo "--------------------------------------------------"
+read -r -p "Format ROOT partition ($ROOT_PART)? This WILL erase all data on it. (y/n) [default: y]: " FORMAT_ROOT
+FORMAT_ROOT=${FORMAT_ROOT:-y}
+
+read -r -p "Format BOOT partition ($BOOT_PART)? WARNING: Say 'n' if this is your Windows EFI! (y/n) [default: n]: " FORMAT_BOOT
+FORMAT_BOOT=${FORMAT_BOOT:-n}
+
+read -r -p "Enter filesystem type for BOOT (e.g. vfat, ext4) [default: vfat]: " BOOT_FS
+BOOT_FS=${BOOT_FS:-vfat}
+
+read -r -p "Enter filesystem type for ROOT (e.g. ext4, btrfs) [default: ext4]: " ROOT_FS
+ROOT_FS=${ROOT_FS:-ext4}
+
 
 echo ""
 echo "--------------------------------------------------"
@@ -124,26 +142,35 @@ echo " SUMMARY:"
 echo " Hostname      : $HOSTNAME"
 echo " Username      : $USERNAME"
 echo " Timezone      : $TIMEZONE"
-echo " Boot Partition: $BOOT_PART"
-echo " Root Partition: $ROOT_PART"
+echo " Boot Partition: $BOOT_PART ($BOOT_FS) - Format: $FORMAT_BOOT"
+echo " Root Partition: $ROOT_PART ($ROOT_FS) - Format: $FORMAT_ROOT"
 echo " Kernel        : linux-cachyos (AUR)"
 echo " Bootloader    : $( [ "$BOOTLOADER_CHOICE" == "1" ] && echo "Limine" || echo "GRUB" )"
 echo "--------------------------------------------------"
 echo ""
 read -r -p "Press Enter to start installation, or Ctrl+C to cancel..."
 
-BASE_PKGS="base base-devel dinit elogind-dinit linux-firmware efibootmgr networkmanager networkmanager-dinit chrony chrony-dinit nano git terminus-font fastfetch btop ly libxcb"
+BASE_PKGS="base base-devel dinit elogind-dinit linux-firmware efibootmgr networkmanager networkmanager-dinit chrony chrony-dinit nano git terminus-font fastfetch btop ly libxcb dosfstools"
 
 if [ "$BOOTLOADER_CHOICE" == "1" ]; then
     BASE_PKGS="$BASE_PKGS limine"
 else
-    BASE_PKGS="$BASE_PKGS grub"
+    BASE_PKGS="$BASE_PKGS grub os-prober"
 fi
 
 echo ""
-echo "[Step 1/7] Formatting partitions..."
-mkfs.vfat -F 32 "$BOOT_PART"
-mkfs.ext4 -F "$ROOT_PART"
+echo "[Step 1/7] Formatting partitions (if selected)..."
+if [[ "$FORMAT_BOOT" =~ ^[Yy]$ ]]; then
+    mkfs.vfat -F 32 "$BOOT_PART" || { echo "Failed to format BOOT"; exit 1; }
+else
+    echo "Skipping format for BOOT partition ($BOOT_PART)."
+fi
+
+if [[ "$FORMAT_ROOT" =~ ^[Yy]$ ]]; then
+    mkfs.ext4 -F "$ROOT_PART" || { echo "Failed to format ROOT"; exit 1; }
+else
+    echo "Skipping format for ROOT partition ($ROOT_PART)."
+fi
 
 if [[ "$USE_SWAP" =~ ^[Yy]$ ]]; then
     mkswap "$SWAP_PART"
@@ -151,9 +178,9 @@ if [[ "$USE_SWAP" =~ ^[Yy]$ ]]; then
 fi
 
 echo "[Step 2/7] Mounting partitions..."
-mount "$ROOT_PART" /mnt
+mount -t "$ROOT_FS" "$ROOT_PART" /mnt
 mkdir -p /mnt/boot
-mount "$BOOT_PART" /mnt/boot
+mount -t "$BOOT_FS" "$BOOT_PART" /mnt/boot
 
 echo "[Step 3/7] Installing base system packages..."
 basestrap /mnt $BASE_PKGS
@@ -207,17 +234,14 @@ chmod 440 /etc/sudoers.d/builder
 echo "==> Installing kernel build dependencies..."
 pacman -S --noconfirm --needed base-devel bc pahole rust rust-bindgen rust-src clang llvm lld inetutils gnupg
 
-echo "==> Cloning and compiling linux-cachyos (This will take a while)..."
+echo "==> Cloning and compiling linux-cachyos (Using max CPU cores)..."
 su - builder -c '
 set -Eeuo pipefail
 cd ~
 git clone https://aur.archlinux.org/linux-cachyos.git
 cd linux-cachyos
-
-# PATCH: Remove strict version requirement for pahole to fix Artix repo mismatch
 sed -i "s/pahole=[0-9:.-]*/pahole/g" PKGBUILD
-
-# Build and install, bypassing dependency and signature checks
+# Compilation will now use ALL available CPU cores and RAM
 makepkg -si --noconfirm --nodeps --skippgpcheck
 '
 
@@ -279,6 +303,8 @@ LIMINE
     PART_NUM=$(echo "$BOOT_PART" | grep -o '[0-9]*$')
     efibootmgr --create --disk "$DISK_DEV" --part "$PART_NUM" --label "Limine" --loader '\\EFI\\BOOT\\BOOTX64.EFI'
 else
+    # Enable os-prober to detect Windows
+    echo "GRUB_DISABLE_OS_PROBER=false" >> /etc/default/grub
     grub-install --target=x86_64-efi --efi-directory=/boot --bootloader-id=GRUB
     grub-mkconfig -o /boot/grub/grub.cfg
 fi
@@ -295,7 +321,7 @@ sed -i "s|__BOOTLOADER_CHOICE__|$BOOTLOADER_CHOICE|g" /mnt/root/chroot-setup.sh
 
 chmod +x /mnt/root/chroot-setup.sh
 
-echo "[Step 6/7] Executing chroot system deployment (Building CachyOS kernel. THIS TAKES TIME)..."
+echo "[Step 6/7] Executing chroot system deployment (Building CachyOS kernel)..."
 artix-chroot /mnt /root/chroot-setup.sh
 
 echo "[Step 7/7] Cleaning up and unmounting..."
