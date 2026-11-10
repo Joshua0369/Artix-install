@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # ==============================================================================
 # Artix Linux Streamlined Installer (Reworked)
-# System: dinit + zen + fastfetch + btop + ly
+# System: dinit + linux-cachyos + fastfetch + btop + ly
 # Default hostname: 60
 # ==============================================================================
 
@@ -166,6 +166,7 @@ echo " Username      : $USERNAME"
 echo " Timezone      : $TIMEZONE"
 echo " Boot Partition: $BOOT_PART"
 echo " Root Partition: $ROOT_PART"
+echo " Kernel        : linux-cachyos (AUR)"
 echo " Bootloader    : $( [ "$BOOTLOADER_CHOICE" == "1" ] && echo "Limine" || echo "GRUB" )"
 echo "--------------------------------------------------"
 echo ""
@@ -176,7 +177,11 @@ read -r -p "Press Enter to start installation, or Ctrl+C to cancel..."
 # CATEGORY: PACKAGE RESOLUTION & BOOTSTRAP
 # ##################################################
 
-BASE_PKGS="base base-devel dinit elogind-dinit linux-zen linux-zen-headers linux-firmware efibootmgr networkmanager networkmanager-dinit chrony chrony-dinit nano git terminus-font fastfetch btop ly libxcb"
+# NOTE: linux-cachyos and linux-cachyos-headers are NOT included here because
+# basestrap cannot install AUR packages. They are built and installed inside
+# the chroot after the base system is ready.
+
+BASE_PKGS="base base-devel dinit elogind-dinit linux-firmware efibootmgr networkmanager networkmanager-dinit chrony chrony-dinit nano git terminus-font fastfetch btop ly libxcb"
 
 if [ "$BOOTLOADER_CHOICE" == "1" ]; then
     BASE_PKGS="$BASE_PKGS limine"
@@ -185,7 +190,7 @@ else
 fi
 
 echo ""
-echo "[Step 1/6] Formatting partitions..."
+echo "[Step 1/7] Formatting partitions..."
 mkfs.vfat -F 32 "$BOOT_PART"
 mkfs.ext4 -F "$ROOT_PART"
 
@@ -194,15 +199,15 @@ if [[ "$USE_SWAP" =~ ^[Yy]$ ]]; then
     swapon "$SWAP_PART"
 fi
 
-echo "[Step 2/6] Mounting partitions..."
+echo "[Step 2/7] Mounting partitions..."
 mount "$ROOT_PART" /mnt
 mkdir -p /mnt/boot
 mount "$BOOT_PART" /mnt/boot
 
-echo "[Step 3/6] Installing base system packages..."
+echo "[Step 3/7] Installing base system packages..."
 basestrap /mnt $BASE_PKGS
 
-echo "[Step 4/6] Generating fstab..."
+echo "[Step 4/7] Generating fstab..."
 fstabgen -U /mnt >> /mnt/etc/fstab
 
 
@@ -210,7 +215,7 @@ fstabgen -U /mnt >> /mnt/etc/fstab
 # CATEGORY: CHROOT SYSTEM CONFIGURATION
 # ##################################################
 
-echo "[Step 5/6] Configuring system inside chroot..."
+echo "[Step 5/7] Configuring system inside chroot..."
 
 cat << 'EOF' > /mnt/root/chroot-setup.sh
 #!/usr/bin/env bash
@@ -250,7 +255,31 @@ cat << HOSTS > /etc/hosts
 127.0.1.1   $HOSTNAME.localdomain   $HOSTNAME
 HOSTS
 
+# --------------------------------------------------
+# Install linux-cachyos from AUR
+# --------------------------------------------------
+echo "==> Building and installing linux-cachyos from AUR..."
+# Ensure we have a non-root user for makepkg (makepkg refuses to run as root)
+useradd -m -G wheel -s /bin/bash builder 2>/dev/null || true
+echo "builder ALL=(ALL) NOPASSWD: ALL" > /etc/sudoers.d/builder
+chmod 440 /etc/sudoers.d/builder
+
+# Clone and build in the builder's home
+su - builder -c '
+set -Eeuo pipefail
+cd ~
+git clone https://aur.archlinux.org/linux-cachyos.git
+cd linux-cachyos
+makepkg -si --noconfirm
+'
+
+# Remove the temporary builder user after install
+userdel -r builder 2>/dev/null || true
+rm -f /etc/sudoers.d/builder
+
+# --------------------------------------------------
 # User Creation
+# --------------------------------------------------
 echo "-> Set root administrator password:"
 passwd
 useradd -m -G wheel -s /bin/bash $USERNAME
@@ -273,7 +302,7 @@ mkdir -p /etc/dinit.d/boot.d
 ln -sf /etc/dinit.d/chronyd /etc/dinit.d/boot.d/
 ln -sf /etc/dinit.d/NetworkManager /etc/dinit.d/boot.d/
 
-# Create Ly Dinit Service Definition File (Correct binary path and signal syntax)
+# Create Ly Dinit Service Definition File
 cat << 'LYSERVICE' > /etc/dinit.d/ly
 type = process
 restart = true
@@ -302,10 +331,10 @@ if [ "$BOOTLOADER_CHOICE" == "1" ]; then
     cat << LIMINE > /boot/limine.conf
 timeout: no
 
-/Artix Linux (Zen Kernel)
+/Artix Linux (CachyOS Kernel)
     protocol: linux
-    path: boot():/vmlinuz-linux-zen
-    module_path: boot():/initramfs-linux-zen.img
+    path: boot():/vmlinuz-linux-cachyos
+    module_path: boot():/initramfs-linux-cachyos.img
     cmdline: root=UUID=$ROOT_UUID rw quiet
 LIMINE
 
@@ -330,10 +359,10 @@ sed -i "s|__BOOTLOADER_CHOICE__|$BOOTLOADER_CHOICE|g" /mnt/root/chroot-setup.sh
 
 chmod +x /mnt/root/chroot-setup.sh
 
-echo "==> Executing chroot system deployment..."
+echo "[Step 6/7] Executing chroot system deployment (building CachyOS kernel)..."
 artix-chroot /mnt /root/chroot-setup.sh
 
-echo "[Step 6/6] Cleaning up and unmounting..."
+echo "[Step 7/7] Cleaning up and unmounting..."
 rm /mnt/root/chroot-setup.sh
 umount -R /mnt
 
