@@ -42,12 +42,12 @@ else
 fi
 echo ""
 
-read -r -p "Do you want to download and set the console font to ter-v22b? (y/n) [default: y]: " SET_FONT
+read -r -p "Do you want to download and set the console font to ter-22b? (y/n) [default: y]: " SET_FONT
 SET_FONT=${SET_FONT:-y}
 if [[ "$SET_FONT" =~ ^[Yy]$ ]]; then
     echo "==> Installing terminus-font on live environment..."
     pacman -Sy --noconfirm terminus-font 2>/dev/null || echo "[!] Warning: Could not install terminus-font via pacman."
-    setfont ter-v22b 2>/dev/null || echo "[!] Notice: ter-v22b font could not be loaded."
+    setfont ter-22b 2>/dev/null || echo "[!] Notice: ter-22b font could not be loaded."
 fi
 echo ""
 
@@ -266,11 +266,9 @@ sed -i 's/pahole=[0-9:.-]*/pahole/g' PKGBUILD
 sed -i 's/^_use_llvm_lto=.*/_use_llvm_lto=none/' PKGBUILD
 
 if [ \"$KERNEL_MODE\" == \"manual\" ]; then
-    echo '==> Manual mode selected: Generating default config and opening menuconfig...'
-    # Generate the default config first so makepkg doesn't fail, then open the menu
-    make defconfig
-    make menuconfig
-    makepkg -si --noconfirm --nodeps --skippgpcheck
+    echo '==> Manual mode selected: The PKGBUILD will pause and open menuconfig for you.'
+    # _menuconfig=y tells the CachyOS PKGBUILD to pause and open the menu after extracting
+    makepkg -si --noconfirm --nodeps --skippgpcheck _menuconfig=y
 else
     echo '==> Automatic mode selected: Using safe defaults...'
     # Pipe \"yes\" to accept all defaults automatically
