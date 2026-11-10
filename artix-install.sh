@@ -1,15 +1,12 @@
 #!/usr/bin/env bash
 # ==============================================================================
-# Artix Linux Streamlined Installer (Fully Reworked v3)
+# Artix Linux Streamlined Installer (Fully Reworked v4)
 # System: dinit + linux-cachyos + fastfetch + btop + ly
 # Default hostname: 60
 # ==============================================================================
 
 set -Eeuo pipefail
 
-# --------------------------------------------------
-# Error Handler & Safe Cleanup Trap
-# --------------------------------------------------
 cleanup_on_error() {
     local exit_code=$?
     local line_no=$1
@@ -25,11 +22,6 @@ cleanup_on_error() {
 }
 
 trap 'cleanup_on_error $LINENO' ERR
-
-
-# ##################################################
-# CATEGORY: PRE-INSTALLATION SYSTEM & NETWORK CHECKS
-# ##################################################
 
 echo "=================================================="
 echo "    Artix Linux Streamlined Installer             "
@@ -47,7 +39,6 @@ echo ""
 
 echo "==> Running pre-installation checks..."
 
-# Check 1: Artix OS Environment Check
 if [ -f /etc/os-release ]; then source /etc/os-release; fi
 
 if [[ "${ID:-}" != "artix" && "${ID_LIKE:-}" != *"artix"* ]]; then
@@ -61,7 +52,6 @@ if [[ "${ID:-}" != "artix" && "${ID_LIKE:-}" != *"artix"* ]]; then
     exit 1
 fi
 
-# Check 2: Active Internet / Network Connection Check
 if ! ping -c 1 -W 3 1.1.1.1 >/dev/null 2>&1 && ! ping -c 1 -W 3 archlinux.org >/dev/null 2>&1; then
     echo ""
     echo "=================================================================="
@@ -81,11 +71,6 @@ if [[ "$CONTINUE_CHOICE" != "execute" ]]; then
     exit 0
 fi
 echo ""
-
-
-# ##################################################
-# CATEGORY: USER PROMPTS & CONFIGURATION
-# ##################################################
 
 read -r -p "Enter hostname (PC name) [default: 60]: " HOSTNAME
 HOSTNAME=${HOSTNAME:-60}
@@ -147,11 +132,6 @@ echo "--------------------------------------------------"
 echo ""
 read -r -p "Press Enter to start installation, or Ctrl+C to cancel..."
 
-
-# ##################################################
-# CATEGORY: PACKAGE RESOLUTION & BOOTSTRAP
-# ##################################################
-
 BASE_PKGS="base base-devel dinit elogind-dinit linux-firmware efibootmgr networkmanager networkmanager-dinit chrony chrony-dinit nano git terminus-font fastfetch btop ly libxcb"
 
 if [ "$BOOTLOADER_CHOICE" == "1" ]; then
@@ -181,11 +161,6 @@ basestrap /mnt $BASE_PKGS
 echo "[Step 4/7] Generating fstab..."
 fstabgen -U /mnt >> /mnt/etc/fstab
 
-
-# ##################################################
-# CATEGORY: CHROOT SYSTEM CONFIGURATION
-# ##################################################
-
 echo "[Step 5/7] Configuring system inside chroot..."
 
 cat << 'EOF' > /mnt/root/chroot-setup.sh
@@ -211,14 +186,12 @@ ROOT_PART="__ROOT_PART__"
 BOOT_PART="__BOOT_PART__"
 BOOTLOADER_CHOICE="__BOOTLOADER_CHOICE__"
 
-# Time & Locale
 ln -sf /usr/share/zoneinfo/$TIMEZONE /etc/localtime
 hwclock --systohc
 sed -i 's/#en_US.UTF-8 UTF-8/en_US.UTF-8 UTF-8/' /etc/locale.gen
 locale-gen
 echo "LANG=en_US.UTF-8" > /etc/locale.conf
 
-# Hostname
 echo "$HOSTNAME" > /etc/hostname
 cat << HOSTS > /etc/hosts
 127.0.0.1   localhost
@@ -226,16 +199,13 @@ cat << HOSTS > /etc/hosts
 127.0.1.1   $HOSTNAME.localdomain   $HOSTNAME
 HOSTS
 
-# --------------------------------------------------
-# Install linux-cachyos from AUR (with fixed dependencies)
-# --------------------------------------------------
 echo "==> Preparing to build linux-cachyos from AUR..."
 useradd -m -G wheel -s /bin/bash builder 2>/dev/null || true
 echo "builder ALL=(ALL) NOPASSWD: ALL" > /etc/sudoers.d/builder
 chmod 440 /etc/sudoers.d/builder
 
 echo "==> Installing kernel build dependencies..."
-pacman -S --noconfirm --needed base-devel bc pahole rust rust-bindgen rust-src clang llvm lld inetutils
+pacman -S --noconfirm --needed base-devel bc pahole rust rust-bindgen rust-src clang llvm lld inetutils gnupg
 
 echo "==> Cloning and compiling linux-cachyos (This will take a while)..."
 su - builder -c '
@@ -247,16 +217,13 @@ cd linux-cachyos
 # PATCH: Remove strict version requirement for pahole to fix Artix repo mismatch
 sed -i "s/pahole=[0-9:.-]*/pahole/g" PKGBUILD
 
-# Build and install, bypassing the dependency check just in case
-makepkg -si --noconfirm --nodeps
+# Build and install, bypassing dependency and signature checks
+makepkg -si --noconfirm --nodeps --skippgpcheck
 '
 
 userdel -r builder 2>/dev/null || true
 rm -f /etc/sudoers.d/builder
 
-# --------------------------------------------------
-# User Creation
-# --------------------------------------------------
 echo "-> Set root administrator password:"
 passwd
 useradd -m -G wheel -s /bin/bash $USERNAME
@@ -265,7 +232,6 @@ passwd $USERNAME
 
 chown -R $USERNAME:$USERNAME /home/$USERNAME
 
-# Sudoers rules
 sed -i '/%wheel ALL=(ALL:ALL) ALL/s/^#//' /etc/sudoers
 echo "%wheel ALL=(ALL) NOPASSWD: ALL" > /etc/sudoers.d/wheel
 chmod 440 /etc/sudoers.d/wheel
@@ -273,12 +239,10 @@ chmod 440 /etc/sudoers.d/wheel
 echo "$USERNAME ALL=(ALL) NOPASSWD: /usr/bin/reboot, /usr/bin/poweroff, /usr/sbin/reboot, /usr/sbin/poweroff" > /etc/sudoers.d/reboot
 chmod 440 /etc/sudoers.d/reboot
 
-# Dinit Services
 mkdir -p /etc/dinit.d/boot.d
 ln -sf /etc/dinit.d/chronyd /etc/dinit.d/boot.d/
 ln -sf /etc/dinit.d/NetworkManager /etc/dinit.d/boot.d/
 
-# Create Ly Dinit Service
 cat << 'LYSERVICE' > /etc/dinit.d/ly
 type = process
 command = /usr/bin/ly-dm
@@ -291,13 +255,11 @@ LYSERVICE
 
 ln -sf /etc/dinit.d/ly /etc/dinit.d/boot.d/
 
-# Ly TTY console config
 mkdir -p /etc/dinit.d/config
 cat << 'CONSOLECONF' > /etc/dinit.d/config/console.conf
 ACTIVE_CONSOLES=/dev/tty1 /dev/tty3 /dev/tty4 /dev/tty5 /dev/tty6
 CONSOLECONF
 
-# Bootloader Setup
 if [ "$BOOTLOADER_CHOICE" == "1" ]; then
     mkdir -p /boot/EFI/BOOT
     cp /usr/share/limine/BOOTX64.EFI /boot/EFI/BOOT/
@@ -324,7 +286,6 @@ fi
 echo "Chroot configuration complete!"
 EOF
 
-# Inject variables
 sed -i "s|__HOSTNAME__|$HOSTNAME|g" /mnt/root/chroot-setup.sh
 sed -i "s|__USERNAME__|$USERNAME|g" /mnt/root/chroot-setup.sh
 sed -i "s|__TIMEZONE__|$TIMEZONE|g" /mnt/root/chroot-setup.sh
