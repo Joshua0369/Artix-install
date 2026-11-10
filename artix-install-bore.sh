@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # ==============================================================================
-# Artix Linux Streamlined Installer (CachyOS BORE / Dual-Boot Safe)
+# Artix Linux Streamlined Installer (CachyOS BORE / User Choice)
 # System: dinit + linux-cachyos-bore + fastfetch + btop + ly
 # Default hostname: 60
 # ==============================================================================
@@ -28,12 +28,26 @@ echo "    Artix Linux Streamlined Installer (BORE)      "
 echo "=================================================="
 echo ""
 
-read -r -p "Do you want to download and set the console font to ter-v14b? (y/n) [default: y]: " SET_FONT
+# --- NEW: KERNEL COMPILATION CHOICE ---
+echo "How would you like to compile the CachyOS BORE kernel?"
+echo "  1) Automatic (Fast, uses default drivers, finishes quickly)"
+echo "  2) Manual (Opens menuconfig so you can select exactly what to compile)"
+read -r -p "Choose (1 or 2) [default: 1]: " COMPILE_CHOICE
+COMPILE_CHOICE=${COMPILE_CHOICE:-1}
+
+if [ "$COMPILE_CHOICE" == "2" ]; then
+    KERNEL_MODE="manual"
+else
+    KERNEL_MODE="automatic"
+fi
+echo ""
+
+read -r -p "Do you want to download and set the console font to ter-v22b? (y/n) [default: y]: " SET_FONT
 SET_FONT=${SET_FONT:-y}
 if [[ "$SET_FONT" =~ ^[Yy]$ ]]; then
     echo "==> Installing terminus-font on live environment..."
     pacman -Sy --noconfirm terminus-font 2>/dev/null || echo "[!] Warning: Could not install terminus-font via pacman."
-    setfont ter-v14b 2>/dev/null || echo "[!] Notice: ter-v14b font could not be loaded."
+    setfont ter-v22b 2>/dev/null || echo "[!] Notice: ter-v22b font could not be loaded."
 fi
 echo ""
 
@@ -144,7 +158,7 @@ echo " Username      : $USERNAME"
 echo " Timezone      : $TIMEZONE"
 echo " Boot Partition: $BOOT_PART ($BOOT_FS) - Format: $FORMAT_BOOT"
 echo " Root Partition: $ROOT_PART ($ROOT_FS) - Format: $FORMAT_ROOT"
-echo " Kernel        : linux-cachyos-bore (AUR)"
+echo " Kernel Mode   : $KERNEL_MODE"
 echo " Bootloader    : $( [ "$BOOTLOADER_CHOICE" == "1" ] && echo "Limine" || echo "GRUB" )"
 echo "--------------------------------------------------"
 echo ""
@@ -212,6 +226,7 @@ TIMEZONE="__TIMEZONE__"
 ROOT_PART="__ROOT_PART__"
 BOOT_PART="__BOOT_PART__"
 BOOTLOADER_CHOICE="__BOOTLOADER_CHOICE__"
+KERNEL_MODE="__KERNEL_MODE__"
 
 ln -sf /usr/share/zoneinfo/$TIMEZONE /etc/localtime
 hwclock --systohc
@@ -237,17 +252,29 @@ pacman -S --noconfirm --needed base-devel bc pahole rust rust-bindgen rust-src c
 # Enable ccache so if the laptop crashes, it resumes faster next time
 sed -i 's/^BUILDENV=.*/BUILDENV=(!distcc color ccache check !sign)/' /etc/makepkg.conf
 
-echo "==> Cloning and compiling linux-cachyos-bore (Optimized, using max CPU cores)..."
-su - builder -c '
+echo "==> Cloning and compiling linux-cachyos-bore (Mode: $KERNEL_MODE)..."
+su - builder -c "
 set -Eeuo pipefail
 cd ~
 git clone https://aur.archlinux.org/linux-cachyos-bore.git
 cd linux-cachyos-bore
-sed -i "s/pahole=[0-9:.-]*/pahole/g" PKGBUILD
+
+# Fix dependency mismatch
+sed -i 's/pahole=[0-9:.-]*/pahole/g' PKGBUILD
+
 # Disable LTO to prevent sudden hardware shutdowns and drastically speed up compiling
-sed -i "s/^_use_llvm_lto=.*/_use_llvm_lto=none/" PKGBUILD
-makepkg -si --noconfirm --nodeps --skippgpcheck
-'
+sed -i 's/^_use_llvm_lto=.*/_use_llvm_lto=none/' PKGBUILD
+
+rm -f config.x86_64 config
+
+if [ \"$KERNEL_MODE\" == \"manual\" ]; then
+    echo '==> Manual mode selected: Opening menuconfig...'
+    makepkg -si --noconfirm --nodeps --skippgpcheck
+else
+    echo '==> Automatic mode selected: Using safe defaults...'
+    echo -e '\n\n\n\n\n\n\n\n\n\n' | makepkg -si --noconfirm --nodeps --skippgpcheck
+fi
+"
 
 userdel -r builder 2>/dev/null || true
 rm -f /etc/sudoers.d/builder
@@ -321,6 +348,7 @@ sed -i "s|__TIMEZONE__|$TIMEZONE|g" /mnt/root/chroot-setup.sh
 sed -i "s|__ROOT_PART__|$ROOT_PART|g" /mnt/root/chroot-setup.sh
 sed -i "s|__BOOT_PART__|$BOOT_PART|g" /mnt/root/chroot-setup.sh
 sed -i "s|__BOOTLOADER_CHOICE__|$BOOTLOADER_CHOICE|g" /mnt/root/chroot-setup.sh
+sed -i "s|__KERNEL_MODE__|$KERNEL_MODE|g" /mnt/root/chroot-setup.sh
 
 chmod +x /mnt/root/chroot-setup.sh
 
@@ -334,5 +362,5 @@ umount -R /mnt
 echo ""
 echo "================================================--"
 echo "      Installation Finished Successfully!         "
-echo "  You can now remove your USB and type 'reboot'.  "
+echo " You can now remove your USB and type 'reboot'.   "
 echo "================================================--"
