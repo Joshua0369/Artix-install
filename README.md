@@ -65,7 +65,11 @@ All three scripts share the same core installer (partitioning, base system, dini
 
 ---
 
-## 📥 How to use
+## 📥 How to install
+
+You can grab the scripts either with **`git`** (get the whole repo) or with **`curl -L -O`** (grab just the script you need). Both work from the Artix Live ISO.
+
+### 0. Prepare the live environment
 
 1. **Boot into the Artix Linux Live ISO** and connect to the internet:
    ```bash
