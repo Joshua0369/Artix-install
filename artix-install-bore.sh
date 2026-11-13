@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # ==============================================================================
-# Artix Linux Streamlined Installer (CachyOS BORE / UUID & NVMe Fix)
+# Artix Linux Streamlined Installer (CachyOS BORE / Fully Fixed)
 # System: dinit + linux-cachyos-bore + fastfetch + btop + ly
 # Default hostname: 60
 # ==============================================================================
@@ -279,10 +279,14 @@ rm -f /etc/sudoers.d/builder
 
 # --- CRITICAL FIX: FORCE NVME DRIVER INTO INITRAMFS ---
 echo "==> Configuring mkinitcpio to force NVMe driver..."
-# Ensure the MODULES line contains nvme
-sed -i 's/^MODULES=(\(.*\))/MODULES=(nvme \1)/' /etc/mkinitcpio.conf
-# Clean up any accidental double spaces
-sed -i 's/  */ /g' /etc/mkinitcpio.conf
+if grep -q "^MODULES=" /etc/mkinitcpio.conf; then
+    # Add nvme to the existing MODULES array
+    sed -i 's/^MODULES=(\(.*\))/MODULES=(nvme \1)/' /etc/mkinitcpio.conf
+    sed -i 's/  */ /g' /etc/mkinitcpio.conf
+else
+    # If MODULES doesn't exist for some reason, append it
+    echo "MODULES=(nvme)" >> /etc/mkinitcpio.conf
+fi
 
 echo "-> Set root administrator password:"
 passwd
