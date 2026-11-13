@@ -28,12 +28,12 @@ echo "    Artix Installer (Pre-Compiled Chaotic BORE)   "
 echo "=================================================="
 echo ""
 
-read -r -p "Do you want to download and set the console font to ter-24b? (y/n) [default: y]: " SET_FONT
+read -r -p "Do you want to download and set the console font to ter-22b? (y/n) [default: y]: " SET_FONT
 SET_FONT=${SET_FONT:-y}
 if [[ "$SET_FONT" =~ ^[Yy]$ ]]; then
     echo "==> Installing terminus-font on live environment..."
     pacman -Sy --noconfirm terminus-font 2>/dev/null || echo "[!] Warning: Could not install terminus-font."
-    setfont ter-24b 2>/dev/null || echo "[!] Notice: ter-24b font could not be loaded."
+    setfont ter-22b 2>/dev/null || echo "[!] Notice: ter-22b font could not be loaded."
 fi
 echo ""
 
@@ -173,8 +173,6 @@ ln -sf /etc/dinit.d/chronyd /etc/dinit.d/boot.d/
 ln -sf /etc/dinit.d/NetworkManager /etc/dinit.d/boot.d/
 
 # --- LY SETUP (FIXED CONSOLE CONFLICT) ---
-# We installed ly-dinit in base packages, so the service file already exists!
-# We just need to free up TTY1 so Ly can use it.
 mkdir -p /etc/dinit.d/config
 cat << 'CONSOLECONF' > /etc/dinit.d/config/console.conf
 ACTIVE_CONSOLES="/dev/tty[2-6]"
