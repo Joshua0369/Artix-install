@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # ==============================================================================
-# Artix Linux Streamlined Installer (CachyOS BORE / Fixed Manual Mode)
+# Artix Linux Streamlined Installer (CachyOS BORE / UUID & NVMe Fix)
 # System: dinit + linux-cachyos-bore + fastfetch + btop + ly
 # Default hostname: 60
 # ==============================================================================
@@ -28,7 +28,7 @@ echo "    Artix Linux Streamlined Installer (BORE)      "
 echo "=================================================="
 echo ""
 
-# --- NEW: KERNEL COMPILATION CHOICE ---
+# --- KERNEL COMPILATION CHOICE ---
 echo "How would you like to compile the CachyOS BORE kernel?"
 echo "  1) Automatic (Fast, uses default drivers, finishes quickly)"
 echo "  2) Manual (Opens menuconfig so you can select exactly what to compile)"
@@ -267,17 +267,22 @@ sed -i 's/^_use_llvm_lto=.*/_use_llvm_lto=none/' PKGBUILD
 
 if [ \"$KERNEL_MODE\" == \"manual\" ]; then
     echo '==> Manual mode selected: The PKGBUILD will pause and open menuconfig for you.'
-    # _menuconfig=y tells the CachyOS PKGBUILD to pause and open the menu after extracting
     makepkg -si --noconfirm --nodeps --skippgpcheck _menuconfig=y
 else
     echo '==> Automatic mode selected: Using safe defaults...'
-    # Pipe \"yes\" to accept all defaults automatically
     yes \"\" | makepkg -si --noconfirm --nodeps --skippgpcheck
 fi
 "
 
 userdel -r builder 2>/dev/null || true
 rm -f /etc/sudoers.d/builder
+
+# --- CRITICAL FIX: FORCE NVME DRIVER INTO INITRAMFS ---
+echo "==> Configuring mkinitcpio to force NVMe driver..."
+# Ensure the MODULES line contains nvme
+sed -i 's/^MODULES=(\(.*\))/MODULES=(nvme \1)/' /etc/mkinitcpio.conf
+# Clean up any accidental double spaces
+sed -i 's/  */ /g' /etc/mkinitcpio.conf
 
 echo "-> Set root administrator password:"
 passwd
@@ -315,11 +320,17 @@ cat << 'CONSOLECONF' > /etc/dinit.d/config/console.conf
 ACTIVE_CONSOLES=/dev/tty1 /dev/tty3 /dev/tty4 /dev/tty5 /dev/tty6
 CONSOLECONF
 
+# --- REGENERATE INITRAMFS (Crucial step to include NVMe and new UUID) ---
+echo "==> Regenerating initramfs (this ensures the kernel can find the drive)..."
+mkinitcpio -P
+
 if [ "$BOOTLOADER_CHOICE" == "1" ]; then
     mkdir -p /boot/EFI/BOOT
     cp /usr/share/limine/BOOTX64.EFI /boot/EFI/BOOT/
 
+    # Fetch UUID fresh to ensure it's 100% correct
     ROOT_UUID=$(blkid -s UUID -o value $ROOT_PART)
+    
     cat << LIMINE > /boot/limine.conf
 timeout: no
 
