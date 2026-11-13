@@ -140,7 +140,6 @@ pacman-key --recv-key 3056513887B78AEB --keyserver keyserver.ubuntu.com
 pacman-key --lsign-key 3056513887B78AEB
 pacman -U --noconfirm 'https://cdn-mirror.chaotic.cx/chaotic-aur/chaotic-keyring.pkg.tar.zst' 'https://cdn-mirror.chaotic.cx/chaotic-aur/chaotic-mirrorlist.pkg.tar.zst'
 
-# Temporarily add Chaotic-AUR to the END of pacman.conf
 echo -e "\n[chaotic-aur]\nInclude = /etc/pacman.d/chaotic-mirrorlist" >> /etc/pacman.conf
 pacman -Sy
 
@@ -179,7 +178,6 @@ CONSOLECONF
 ln -sf /etc/dinit.d/ly /etc/dinit.d/boot.d/
 
 if [ "$BOOTLOADER_CHOICE" == "1" ]; then
-    # Only copy the EFI file if it doesn't already exist (safe for unformatted boot partitions)
     if [ ! -f /boot/EFI/BOOT/BOOTX64.EFI ]; then
         mkdir -p /boot/EFI/BOOT
         cp /usr/share/limine/BOOTX64.EFI /boot/EFI/BOOT/
@@ -195,9 +193,7 @@ timeout: no
     cmdline: root=UUID=$ROOT_UUID rw quiet
 LIMINE
 
-    # FIX FOR DUPLICATE LIMINE ENTRIES
-    echo "==> Cleaning up old Limine UEFI entries to prevent duplicates..."
-    # Find all Limine boot numbers and delete them
+    # Cleanup old Limine UEFI entries
     for entry in $(efibootmgr | grep "Limine" | sed -E 's/Boot([0-9A-Fa-f]{4}).*/\1/'); do
         efibootmgr -b "$entry" -B >/dev/null 2>&1 || true
     done
@@ -226,7 +222,22 @@ chmod +x /mnt/root/chroot-setup.sh
 echo "[Step 6/6] Running chroot configuration..."
 artix-chroot /mnt /root/chroot-setup.sh
 
-rm /mnt/root/chroot-setup.sh
+# ==============================================================================
+# CLEANUP PHASE (Removes cache and temp files to save space)
+# ==============================================================================
+echo "==> Cleaning up temporary files and cache..."
+# 1. Remove the builder script
+rm -f /mnt/root/chroot-setup.sh
+# 2. Clear pacman package cache
+rm -rf /mnt/var/cache/pacman/pkg/*
+# 3. Clear ccache
+rm -rf /mnt/root/.cache/ccache/*
+rm -rf /mnt/home/$USERNAME/.cache/ccache/*
+# 4. Remove any leftover AUR build directories
+rm -rf /mnt/root/linux-cachyos-bore
+rm -rf /mnt/home/$USERNAME/linux-cachyos-bore
+# ==============================================================================
+
 umount -R /mnt
 
 echo ""
