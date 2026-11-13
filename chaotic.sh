@@ -148,7 +148,6 @@ echo "==> Downloading and installing linux-cachyos-bore from Chaotic-AUR..."
 pacman -S --noconfirm --needed linux-cachyos-bore
 
 echo "==> Removing Chaotic-AUR to prevent systemd conflicts..."
-# Remove the last 2 lines we added
 sed -i '/\[chaotic-aur\]/,$d' /etc/pacman.conf
 
 # --- CRITICAL FIX: FORCE NVME DRIVER ---
@@ -172,18 +171,20 @@ mkdir -p /etc/dinit.d/boot.d
 ln -sf /etc/dinit.d/chronyd /etc/dinit.d/boot.d/
 ln -sf /etc/dinit.d/NetworkManager /etc/dinit.d/boot.d/
 
-# --- LY SETUP (FIXED CONSOLE CONFLICT) ---
+# --- LY SETUP ---
 mkdir -p /etc/dinit.d/config
 cat << 'CONSOLECONF' > /etc/dinit.d/config/console.conf
 ACTIVE_CONSOLES="/dev/tty[2-6]"
 CONSOLECONF
-
-# Enable Ly to start on boot
 ln -sf /etc/dinit.d/ly /etc/dinit.d/boot.d/
 
 if [ "$BOOTLOADER_CHOICE" == "1" ]; then
-    mkdir -p /boot/EFI/BOOT
-    cp /usr/share/limine/BOOTX64.EFI /boot/EFI/BOOT/
+    # Only copy the EFI file if it doesn't already exist (safe for unformatted boot partitions)
+    if [ ! -f /boot/EFI/BOOT/BOOTX64.EFI ]; then
+        mkdir -p /boot/EFI/BOOT
+        cp /usr/share/limine/BOOTX64.EFI /boot/EFI/BOOT/
+    fi
+
     ROOT_UUID=$(blkid -s UUID -o value $ROOT_PART)
     cat << LIMINE > /boot/limine.conf
 timeout: no
@@ -193,6 +194,14 @@ timeout: no
     module_path: boot():/initramfs-linux-cachyos-bore.img
     cmdline: root=UUID=$ROOT_UUID rw quiet
 LIMINE
+
+    # FIX FOR DUPLICATE LIMINE ENTRIES
+    echo "==> Cleaning up old Limine UEFI entries to prevent duplicates..."
+    # Find all Limine boot numbers and delete them
+    for entry in $(efibootmgr | grep "Limine" | sed -E 's/Boot([0-9A-Fa-f]{4}).*/\1/'); do
+        efibootmgr -b "$entry" -B >/dev/null 2>&1 || true
+    done
+
     DISK_DEV=$(echo "$BOOT_PART" | sed -E 's/p?[0-9]+$//')
     PART_NUM=$(echo "$BOOT_PART" | grep -o '[0-9]*$')
     efibootmgr --create --disk "$DISK_DEV" --part "$PART_NUM" --label "Limine" --loader '\\EFI\\BOOT\\BOOTX64.EFI'
