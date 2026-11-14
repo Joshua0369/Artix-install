@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 set -e
 
+echo "==> Ensuring required system dependencies are installed..."
+sudo pacman -S --needed --noconfirm base-devel git nodejs npm jq
+
 # Write the custom PKGBUILD
 cat << 'EOF' > PKGBUILD
 # Maintainer: Coraline Shuryn <coraline.shuryn@gmail.com>
