@@ -33,7 +33,7 @@ SET_FONT=${SET_FONT:-y}
 if [[ "$SET_FONT" =~ ^[Yy]$ ]]; then
     echo "==> Installing terminus-font on live environment..."
     pacman -Sy --noconfirm terminus-font 2>/dev/null || echo "[!] Warning: Could not install terminus-font."
-    setfont ter-22b 2>/dev/null || echo "[!] Notice: ter-22b font could not be loaded."
+    setfont ter-v22b 2>/dev/null || echo "[!] Notice: ter-22b font could not be loaded."
 fi
 echo ""
 
