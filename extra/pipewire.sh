@@ -3,9 +3,31 @@ set -e
 
 echo "=== Artix Linux PipeWire + pwvucontrol Installer (dinit) ==="
 
-# 1. Install required packages
-# pipewire-dinit, pipewire-pulse-dinit, and wireplumber-dinit provide the user service files
-echo "[*] Installing PipeWire packages and pwvucontrol..."
+# ---------- Check user-level dinit availability ----------
+USER_DINIT_SOCKET="/run/user/$(id -u)/dinitctl"
+
+if [ ! -S "$USER_DINIT_SOCKET" ]; then
+    echo ""
+    echo "[!] User-level dinit is NOT running."
+    echo "    This is why 'dinitctl enable' fails with 'No such file or directory'."
+    echo ""
+    echo "[*] Installing turnstile to manage user services..."
+    sudo pacman -S --needed --noconfirm turnstile turnstile-dinit
+
+    echo "[*] Enabling turnstiled system service..."
+    sudo dinitctl enable turnstiled
+
+    echo ""
+    echo "============================================================"
+    echo "  Turnstile has been installed and enabled."
+    echo "  You MUST log out and log back in (or reboot) NOW."
+    echo "  After logging back in, run this script again."
+    echo "============================================================"
+    exit 0
+fi
+
+# ---------- Install PipeWire packages ----------
+echo "[*] User-level dinit detected. Installing PipeWire packages..."
 sudo pacman -S --needed --noconfirm \
     pipewire \
     pipewire-pulse \
@@ -16,43 +38,31 @@ sudo pacman -S --needed --noconfirm \
     wireplumber-dinit \
     pwvucontrol
 
-# 2. Enable and start user services via dinit
-# In Artix dinit, user services are enabled/started with dinitctl (as user)
+# ---------- Enable and start user services ----------
 echo "[*] Enabling and starting PipeWire user services..."
 
-# Enable the services (this also starts them immediately per dinit behavior)
-# We start wireplumber last as it depends on pipewire
+# dinitctl enable will also start the service
 dinitctl enable pipewire
 dinitctl enable pipewire-pulse
 dinitctl enable wireplumber
 
-# 3. Verify services are running
-echo "[*] Checking service status..."
+# ---------- Verify ----------
+echo ""
+echo "[*] Service status:"
 dinitctl list | grep -E "(pipewire|wireplumber)" || true
 
-# 4. Quick functional test
-echo "[*] Testing PipeWire audio server..."
-if command -v pw-cli &>/dev/null; then
-    # Just check if we can list nodes; this confirms the daemon is reachable
-    if pw-cli ls Node &>/dev/null; then
-        echo "[+] PipeWire is responding."
-    else
-        echo "[!] Warning: PipeWire daemon is not responding yet. You may need to re-login."
-    fi
+echo ""
+echo "[*] Testing PipeWire..."
+if pw-cli info 0 &>/dev/null; then
+    echo "[+] PipeWire daemon is responding."
 else
-    echo "[!] pw-cli not found (unexpected)."
+    echo "[!] PipeWire not responding yet. A re-login may be needed."
 fi
 
-# 5. Check pwvucontrol
 if command -v pwvucontrol &>/dev/null; then
     echo "[+] pwvucontrol is installed."
-else
-    echo "[!] pwvucontrol binary not found in PATH."
 fi
 
 echo ""
-echo "=== Installation Complete ==="
-echo "If this is your first time setting up PipeWire, please log out and log back in"
-echo "(or reboot) to ensure the user session picks up all environment variables."
-echo ""
-echo "After re-login, you can launch 'pwvucontrol' from your application menu or terminal."
+echo "=== Done ==="
+echo "You can now launch 'pwvucontrol' from your application menu or terminal."
