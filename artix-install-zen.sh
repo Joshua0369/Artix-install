@@ -60,15 +60,17 @@ USERNAME=$(whiptail --title "Username" --inputbox "Enter your primary username:"
 TIMEZONE=$(whiptail --title "Timezone" --inputbox "Enter your timezone (e.g., Asia/Manila):" 10 60 "Asia/Manila" 3>&1 1>&2 2>&3) || exit 1
 
 # --------------------------------------------------
-# TUI: Partition Selection
+# TUI: Partition Selection (Showing drives and typing simultaneously)
 # --------------------------------------------------
-lsblk -o NAME,SIZE,FSTYPE,TYPE,MOUNTPOINTS > /tmp/lsblk_out.txt
-whiptail --title "Available Drives" --textbox /tmp/lsblk_out.txt 20 70
+# Generate a clean list of drives (excluding loop devices and squashfs)
+DRIVE_LIST=$(lsblk -o NAME,SIZE,FSTYPE,TYPE | grep -v -E "loop|squashfs" | head -n 15)
 
-BOOT_PART=$(whiptail --title "Boot Partition" --inputbox "Enter your BOOT/EFI partition (e.g., sda1, nvme0n1p1):" 10 60 "" 3>&1 1>&2 2>&3) || exit 1
+# Prompt for Boot Partition
+BOOT_PART=$(whiptail --title "Boot Partition" --inputbox "Available Drives:\n$DRIVE_LIST\n\nEnter your BOOT/EFI partition (e.g., nvme0n1p1):" 20 70 "" 3>&1 1>&2 2>&3) || exit 1
 [[ "$BOOT_PART" != /dev/* ]] && BOOT_PART="/dev/$BOOT_PART"
 
-ROOT_PART=$(whiptail --title "Root Partition" --inputbox "Enter your ROOT partition (e.g., sda2, nvme0n1p4):" 10 60 "" 3>&1 1>&2 2>&3) || exit 1
+# Prompt for Root Partition
+ROOT_PART=$(whiptail --title "Root Partition" --inputbox "Available Drives:\n$DRIVE_LIST\n\nEnter your ROOT partition (e.g., nvme0n1p4):" 20 70 "" 3>&1 1>&2 2>&3) || exit 1
 [[ "$ROOT_PART" != /dev/* ]] && ROOT_PART="/dev/$ROOT_PART"
 
 # --------------------------------------------------
