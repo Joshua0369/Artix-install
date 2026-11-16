@@ -1,56 +1,47 @@
 #!/usr/bin/env bash
+
+# Exit immediately if any command exits with a non-zero status
 set -euo pipefail
 
-REPO_URL="https://github.com/Joshua0369/Artix-install.git"
-REPO_DIR="Artix-install"
-EXTRA_DIR="$REPO_DIR/extra"
+# Resolve absolute paths and filenames
+CURRENT_SCRIPT="$(readlink -f "$0")"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-echo "==> Cloning Artix-install repository..."
-if [ -d "$REPO_DIR" ]; then
-    echo "Directory '$REPO_DIR' already exists. Pulling latest changes..."
-    git -C "$REPO_DIR" pull
-else
-    git clone "$REPO_URL"
-fi
+echo "[INFO] Scanning and executing extra scripts in: $SCRIPT_DIR"
 
-if [ ! -d "$EXTRA_DIR" ]; then
-    echo "Error: 'extra' directory not found in the cloned repository."
-    exit 1
-fi
+for file in "$SCRIPT_DIR"/*; do
+    # Ensure we are evaluating a regular file
+    if [[ -f "$file" ]]; then
+        abs_file="$(readlink -f "$file")"
+        filename="$(basename "$file")"
 
-echo "==> Setting executable permissions (excluding fix.sh)..."
-for script in "$EXTRA_DIR"/*.sh; do
-    [ -f "$script" ] || continue
-    filename=$(basename "$script")
-    if [ "$filename" != "fix.sh" ]; then
-        chmod +x "$script"
-        echo "  [+] chmod +x $filename"
+        # Exclude run_extra.sh itself AND fix.sh
+        if [[ "$abs_file" == "$CURRENT_SCRIPT" ]] || [[ "$filename" == "fix.sh" ]]; then
+            echo "[DEBUG] Skipping excluded script: $filename"
+            continue
+        fi
+
+        # Only process shell script files
+        case "$file" in
+            *.sh)
+                echo "[INFO] Executing: $filename"
+                
+                # Ensure the target script is executable
+                chmod +x "$file"
+                
+                # Execute and catch exit status
+                if "$file"; then
+                    echo "[SUCCESS] Finished: $filename"
+                else
+                    echo "[ERROR] Script failed with exit code $?: $filename" >&2
+                    exit 1
+                fi
+                ;;
+            *)
+                echo "[DEBUG] Skipping non-script file: $filename"
+                ;;
+        esac
     fi
 done
 
-echo "==> Starting execution queue..."
-for script in "$EXTRA_DIR"/*.sh; do
-    [ -f "$script" ] || continue
-    filename=$(basename "$script")
-
-    if [ "$filename" == "fix.sh" ]; then
-        echo "==> Skipping '$filename' (excluded)."
-        continue
-    fi
-
-    echo ""
-    read -rp "Run script '$filename'? (y/N): " choice
-    case "$choice" in
-        y|Y )
-            echo "==> Executing $filename..."
-            bash "$script"
-            echo "==> Finished $filename."
-            ;;
-        * )
-            echo "==> Skipped $filename."
-            ;;
-    esac
-done
-
-echo ""
-echo "==> All scripts processed."
+echo "[INFO] All extra scripts executed successfully."
